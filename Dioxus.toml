@@ -1,0 +1,9 @@
+[application]
+# Az assets könyvtárban vannak a nem-Rust forrású fájlok (icon, sw.js, manifest.json)
+# A Dioxus ezeket bemásolja a build output-ba.
+# A public könyvtárat az index.html-lel együtt szintén ide rakja.
+
+[web.app]
+# Az /app/ prefix kell, mert a szerveren https://zsozso.info/app/ alatt fut.
+# Enélkül a generált <script> tag /./assets/... lenne /app/assets/... helyett.
+base_path = "app"

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zsozso - </title>
+    
+    <!-- PWA Manifest and Theme -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#17a2b8">
+    
+    <!-- iOS PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Zsozso">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon.ico">
+
+    <!-- GUN: decentralised real-time graph database -->
+    <script src="gun.js"></script>
+    <script src="sea.js"></script>
+    <script src="gun_bridge.js"></script>
+    <script src="sea_bridge.js"></script>
+
+    <!-- Passkey (WebAuthn + Web Crypto) bridge -->
+    <script src="passkey_bridge.js"></script>
+
+    <!-- QR code scanner — wascan (loaded as ES module in bridge) -->
+    <script src="qr_scanner_bridge.js"></script>
+
+    <!-- In-app log ring buffer (must load before any console.log calls) -->
+    <script src="log_bridge.js"></script>
+
+    <link rel="preload" as="image" href="icon-512.png">
+
+    <!-- App version — stamped by build.sh; must precede SW registration -->
+    <script>window.__APP_VERSION = 'zsozso-20260309-1646-4390b62b';</script>
+</head>
+<body>
+    <div id="sw-update-banner" style="display:none; position:fixed; top:0; left:0; width:100%;
+ background:#17a2b8; color:#fff; text-align:center; padding:18px 10px; z-index:99999;
+ font-family:sans-serif; font-size:1.15rem; box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+        <span>A new version is available.</span>
+        <button id="sw-refresh-btn" style="margin-left:16px; padding:8px 28px; font-size:1.1rem;
+ border:none; border-radius:6px; background:#fff; color:#17a2b8; font-weight:bold;
+ cursor:pointer;">Refresh</button>
+    </div>
+    <div id="main"></div>
+    <script>
+        let APP_NAME = 'ZSOZSO'; // for the update message...
+        let PREFIX = "app";
+        if ( document.getElementById('spinner') && 'serviceWorker' in navigator) {
+            // bootloader logic: ensure SW is registered and controlling the page, then reload if needed
+            if ('serviceWorker' in navigator) {
+                function hardReload() {
+                     if (navigator.serviceWorker.controller) doReload();
+                
+                     // Wait for work to finish, then schedule the next one
+                     setTimeout(tick, 100);
+                }
+
+                if (window.location.pathname.slice(-1) !== '/') {
+                     window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
+                } else if (navigator.serviceWorker.controller) {
+                    window.location.reload();
+                } else {
+                    var reloading = false;
+                    function doReload() {
+                        if (reloading) return;
+                        reloading = true;
+                        window.location.reload();
+                    }
+                    navigator.serviceWorker.addEventListener('controllerchange', doReload);
+                    navigator.serviceWorker.register(`/${PREFIX}/sw.js`, { scope: `/${PREFIX}/`, updateViaCache: 'none' });
+                    hardReload();
+                }
+            }
+        } else if ('serviceWorker' in navigator) {
+            // main index.html logic: check updates and show update banner if needed
+            function tick() {
+                console.log("[App] tick");
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.ready.then(reg => reg.update());
+                }
+                
+                // Wait for work to finish, then schedule the next one
+                setTimeout(tick, 10000);
+            }
+
+            var _swRefreshing = false;
+            console.log('[App] serviceWorker in navigator');
+
+            // Show the update banner with a manual Refresh button
+            function _showRefreshBanner() {
+                if (_swRefreshing) return;
+                _swRefreshing = true;
+                var banner = document.getElementById('sw-update-banner');
+                if (banner) banner.style.display = 'block';
+                else console.log('[App] no sw-update-banner');
+            }
+
+            // Wire up the Refresh button
+            document.getElementById('sw-refresh-btn').addEventListener('click', function() {
+                // Hard reload: bypass cache to pick up the new SW-served assets
+                console.log('[App] hard reload...');
+                window.location.reload();
+//                // Unregister all service workers and clear their caches,
+//                // then hard-reload so the browser fetches fresh assets.
+//                console.log('[App] Refresh: unregistering SW and clearing caches…');
+//                Promise.all([
+//                    navigator.serviceWorker.getRegistrations().then(function(regs) {
+//                        return Promise.all(regs.map(function(r) { return r.unregister(); }));
+//                    }),
+//                    caches.keys().then(function(keys) {
+//                        return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+//                    })
+//                ]).then(function() {
+//                    console.log('[App] SW unregistered, caches cleared — reloading');
+//                    window.location.reload();
+//                }).catch(function(e) {
+//                    console.error('[App] cleanup failed, reloading anyway:', e);
+//                    window.location.reload();
+//                });
+            });
+
+            // Listen for update signal from the Service Worker
+            navigator.serviceWorker.addEventListener('message', function(event) {
+                if (event.data?.type === `__${APP_NAME}_SW_UPDATED`) {
+                    console.log('[App] update signal — showing Refresh banner');
+                    _showRefreshBanner();
+                }
+            });
+
+            //  When a new Service Worker takes control, show the Refresh banner
+            //  instead of auto-reloading (which can white-screen on PWA).
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+                console.log('[App] new Service Worker took control — showing Refresh banner');
+                _showRefreshBanner();
+            });
+
+            // Register (not re-register) the SW.
+            // updateViaCache:'none' ensures the browser always fetches sw.js
+            // from the network, bypassing any HTTP cache or file lock.
+            navigator.serviceWorker.register(`/${PREFIX}/sw.js`, {
+                scope: `/${PREFIX}/`,
+                updateViaCache: 'none'
+            }).then(function(reg) {
+                console.log('[App] Service Worker registered, scope:', reg.scope);
+            }).catch(function(err) {
+                console.log('[App] Service Worker registration failed:', err.message || err);
+            });
+
+            // Start the loop
+            tick();
+        } else {
+            document.body.innerHTML = '<p>Service Workers are not supported in this browser.</p>';
+        }
+    </script>
+</body>
+</html>
