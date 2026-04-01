@@ -1,0 +1,9 @@
+[submodule "src/db"]
+	path = src/db
+	url = git@github.com:ifinta/db.git
+[submodule "src/ledger"]
+	path = src/ledger
+	url = git@github.com:ifinta/ledger.git
+[submodule "src/store"]
+	path = src/store
+	url = git@github.com:ifinta/store.git
