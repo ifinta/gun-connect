@@ -8,7 +8,18 @@
 #### (not yet solved, but it isn't mandatory to correct it):
 - The status not changing - partially - if I change the language and we are in an async function
 
+## interapp communication (select approach later):
+- GUN.js real-time sync — apps share data through the decentralized GUN database (already available)
+- BroadcastChannel API — same-origin inter-tab messaging (instant, no server needed)
+- SharedWorker — same-origin shared background thread between app tabs
+- PostMessage — cross-origin iframe/window communication
+- URL deep links — pass data between apps via URL parameters
+- Clipboard — copy/paste public keys, addresses between apps
+- Web Share API — native share sheet to pass data between apps
+- Shared IndexedDB / localStorage — same-origin apps read/write shared storage
+
 ## bigger steps:
+- generate unique app icons (icon-192.png, icon-512.png): GUN symbol with a connector
 - a good graphics design (styles...(learn it) use components!)
 - remove unused tabs (CYF, Zsozso, Networking, Log) and their controller methods
 - integrate db, ledger, store as git submodules instead of copied source

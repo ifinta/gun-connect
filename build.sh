@@ -61,7 +61,7 @@ rm -rf "${DX_OUT}"
 # Copy root static assets into dist (in CI there is no persistent dist/)
 cp sw.js manifest.json favicon.ico icon-192.png icon-512.png \
    gun.js gun_bridge.js sea.js sea_bridge.js log_bridge.js \
-   passkey_bridge.js qr_scanner_bridge.js wascan_bg.wasm wascan.js \
+   passkey_bridge.js \
    "${DIST_DIR}/"
 
 # ── 4. Stamp CACHE_NAME ──────────────────────────────────────────────────────
