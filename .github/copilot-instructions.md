@@ -9,6 +9,11 @@ Built with **Dioxus 0.7** (Rust → WASM), runs as a PWA only — no native/desk
 ## Build & Run
 
 ```bash
+# Clone with submodules
+git clone --recurse-submodules git@github.com:ifinta/gun-connect.git
+# Or if already cloned:
+git submodule update --init --recursive
+
 # Dev server with hot-reload
 dx serve --platform web
 
@@ -20,6 +25,10 @@ dx serve --platform web
 ```
 
 Prerequisites: `rustup target add wasm32-unknown-unknown` and `cargo install dioxus-cli`.
+
+### Git submodules
+
+`src/db`, `src/ledger`, and `src/store` are **git submodules** — shared libraries across all Iceberg Protocol apps. The `i18n.rs` (Language enum) and JS bridge files live in the app itself, not in the submodules.
 
 No tests exist. No linter beyond `cargo check`.
 

@@ -6,13 +6,10 @@ pub mod tabs;
 pub mod view;
 pub mod state;
 pub mod controller;
-pub mod qr_scanner;
-pub mod toast;
 
 use dioxus::prelude::*;
 use state::{use_wallet_state, AuthState};
 use controller::AppController;
-use toast::UpdateNotification;
 
 pub fn app() -> Element {
     let state = use_wallet_state();
@@ -33,17 +30,8 @@ pub fn app() -> Element {
         }
     });
 
-    // Load network data when public key becomes available or changes
-    use_effect(move || {
-        let pk = state.public_key.read();
-        if pk.is_some() {
-            ctrl.load_network_action();
-        }
-    });
-
     rsx! {
         {view::render_app(state, ctrl)}
-        //UpdateNotification {}
     }
 }
 
