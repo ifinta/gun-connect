@@ -4,8 +4,8 @@ use crate::ui::state::WalletState;
 use crate::ui::controller::AppController;
 use crate::ui::i18n::UiI18n;
 use crate::ui::status::status_text;
-use crate::i18n::Language;
-use crate::ledger::{Ledger, NetworkEnvironment, StellarLedger};
+use zsozso_common::Language;
+use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
 
 /// Check if running on localhost.
 fn is_localhost() -> bool {
@@ -26,6 +26,7 @@ pub fn render_settings_tab(s: WalletState, ctrl: AppController, i18n: &dyn UiI18
         Language::French => "fr",
         Language::German => "de",
         Language::Spanish => "es",
+        _ => "en",
     };
 
     rsx! {

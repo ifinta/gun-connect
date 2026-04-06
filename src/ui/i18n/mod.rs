@@ -4,7 +4,7 @@ mod german;
 mod hungarian;
 mod spanish;
 
-use crate::i18n::Language;
+use zsozso_common::Language;
 use english::EnglishUi;
 use french::FrenchUi;
 use german::GermanUi;
@@ -217,5 +217,6 @@ pub fn ui_i18n(lang: Language) -> Box<dyn UiI18n> {
         Language::German => Box::new(GermanUi),
         Language::Hungarian => Box::new(HungarianUi),
         Language::Spanish => Box::new(SpanishUi),
+        _ => Box::new(EnglishUi),
     }
 }

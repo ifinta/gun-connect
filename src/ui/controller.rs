@@ -5,11 +5,11 @@ use super::actions::*;
 use super::actions::new_store_for_network;
 use super::status::TxStatus;
 use super::i18n::ui_i18n;
-use crate::ledger::{Ledger, NetworkEnvironment, StellarLedger};
-use crate::store::Store;
-use crate::store::passkey;
-use crate::db::gundb::{GunSea, Sea};
-use crate::db::network::{NetworkGraph, GunNetworkGraph};
+use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
+use zsozso_store::Store;
+use zsozso_store::passkey;
+use zsozso_db::gundb::{GunSea, Sea};
+use zsozso_db::network::{NetworkGraph, GunNetworkGraph};
 use super::clipboard::{copy_to_clipboard, clear_clipboard};
 use super::log;
 
@@ -151,7 +151,7 @@ impl AppController {
     }
 
     pub fn set_language(&self, code: &str) {
-        use crate::i18n::Language;
+        use zsozso_common::Language;
         let lang = match code {
             "hu" => Language::Hungarian,
             "fr" => Language::French,

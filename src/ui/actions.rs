@@ -1,9 +1,9 @@
-use crate::i18n::Language;
-use crate::ledger::{Ledger, NetworkEnvironment, StellarLedger};
+use zsozso_common::Language;
+use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
 
 use super::status::TxStatus;
 
-use crate::store::IndexedDbStore;
+use zsozso_store::IndexedDbStore;
 
 pub async fn submit_transaction(xdr_to_submit: String, net_env: NetworkEnvironment, lang: Language) -> TxStatus {
     if xdr_to_submit.is_empty() {
