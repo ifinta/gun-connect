@@ -32,5 +32,6 @@ impl UiI18n for SpanishUi {
     fn btn_find_relays(&self) -> &'static str { "Buscar Relés" }
     fn lbl_discovered_relays(&self) -> &'static str { "Relés Descubiertos" }
     fn relay_discovering(&self) -> &'static str { "Buscando..." }
-    fn relay_no_results(&self) -> &'static str { "No se encontraron relés en testnet" }
+    fn btn_connect_relay(&self) -> &'static str { "Conectar" }
+    fn btn_remove_relay(&self) -> &'static str { "Eliminar" }
 }

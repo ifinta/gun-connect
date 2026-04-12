@@ -1,11 +1,8 @@
 use dioxus::prelude::*;
 use zeroize::Zeroizing;
-use zsozso_ledger::NetworkEnvironment;
 use zsozso_common::Language;
-use zsozso_db::gundb::SeaKeyPair;
-use super::status::TxStatus;
 use super::tabs::Tab;
-use super::actions::DiscoveredRelay;
+use super::actions::{DiscoveredRelay, RelayEntry};
 
 /// Read biometric preference from localStorage (synchronous).
 fn biometric_enabled_default() -> bool {
@@ -16,6 +13,16 @@ fn biometric_enabled_default() -> bool {
         .flatten()
         .map(|v| v == "true")
         .unwrap_or(false)
+}
+
+/// Read saved relay URL from localStorage (synchronous).
+fn read_relay_url() -> String {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+        .and_then(|s| s.get_item("gun-connect:relay_url").ok())
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// Passkey authentication state machine.
@@ -33,39 +40,22 @@ pub struct WalletState {
     pub language: Signal<Language>,
     pub public_key: Signal<Option<String>>,
     pub secret_key_hidden: Signal<Option<Zeroizing<String>>>,
-    pub generated_xdr: Signal<String>,
-    pub submission_status: Signal<TxStatus>,
-    pub current_network: Signal<NetworkEnvironment>,
     pub clipboard_modal_open: Signal<bool>,
     pub active_tab: Signal<Tab>,
     pub auth_state: Signal<AuthState>,
     pub prf_key: Signal<Option<String>>,
-    /// Whether the SEA key generation modal is open.
-    pub sea_modal_open: Signal<bool>,
-    /// Input value for the SEA secret passphrase (kept only in memory).
-    pub sea_modal_input: Signal<Zeroizing<String>>,
-    /// Generated SEA key pair (kept only in memory, never persisted).
-    pub sea_key_pair: Signal<Option<SeaKeyPair>>,
     /// Whether biometric (passkey) authentication is enabled.
     pub biometric_enabled: Signal<bool>,
     /// Whether the "enable biometric to save" error modal is shown.
     pub biometric_save_modal_open: Signal<bool>,
-    /// Current user's nickname (visible to the whole network).
-    pub nickname: Signal<String>,
-    /// GUN node address (SEA public key) — derived when SEA keys are generated.
-    pub gun_address: Signal<String>,
     /// Optional GUN relay URL — if the user runs their own GUN DB node.
     pub gun_relay_url: Signal<String>,
-    /// Relay connection status: None = not checked, Some(true) = connected, Some(false) = unreachable.
-    pub relay_status: Signal<Option<bool>>,
-    /// Whether a relay check is currently in progress.
-    pub relay_checking: Signal<bool>,
+    /// Connected relays list (max MAX_RELAYS).
+    pub connected_relays: Signal<Vec<RelayEntry>>,
     /// Discovered relays from Stellar testnet.
     pub discovered_relays: Signal<Vec<DiscoveredRelay>>,
     /// Whether relay discovery is in progress.
     pub discovering_relays: Signal<bool>,
-    /// SSS shares modal — when Some, shows the modal with the share strings.
-    pub sss_shares: Signal<Option<Vec<String>>>,
     /// Stored mainnet public key.
     pub mainnet_public_key: Signal<Option<String>>,
     /// Stored testnet public key.
@@ -92,27 +82,17 @@ pub fn use_wallet_state() -> WalletState {
         language: use_signal(Language::default),
         public_key: use_signal(|| None),
         secret_key_hidden: use_signal(|| None),
-        generated_xdr: use_signal(String::new),
-        submission_status: use_signal(|| TxStatus::Waiting),
-        current_network: use_signal(|| NetworkEnvironment::Production),
         clipboard_modal_open: use_signal(|| false),
         active_tab: use_signal(Tab::default),
         // If biometric is disabled, skip the auth gate entirely.
         auth_state: use_signal(move || if bio { AuthState::default() } else { AuthState::Authenticated }),
         prf_key: use_signal(|| None),
-        sea_modal_open: use_signal(|| false),
-        sea_modal_input: use_signal(|| Zeroizing::new(String::new())),
-        sea_key_pair: use_signal(|| None),
         biometric_enabled: use_signal(move || bio),
         biometric_save_modal_open: use_signal(|| false),
-        nickname: use_signal(String::new),
-        gun_address: use_signal(String::new),
-        gun_relay_url: use_signal(String::new),
-        relay_status: use_signal(|| None),
-        relay_checking: use_signal(|| false),
+        gun_relay_url: use_signal(read_relay_url),
+        connected_relays: use_signal(Vec::new),
         discovered_relays: use_signal(Vec::new),
         discovering_relays: use_signal(|| false),
-        sss_shares: use_signal(|| None),
         mainnet_public_key: use_signal(|| None),
         testnet_public_key: use_signal(|| None),
         mainnet_secret_key: use_signal(|| None),

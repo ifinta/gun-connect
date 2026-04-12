@@ -32,5 +32,6 @@ impl UiI18n for FrenchUi {
     fn btn_find_relays(&self) -> &'static str { "Trouver des Relais" }
     fn lbl_discovered_relays(&self) -> &'static str { "Relais Découverts" }
     fn relay_discovering(&self) -> &'static str { "Recherche..." }
-    fn relay_no_results(&self) -> &'static str { "Aucun relais trouvé sur testnet" }
+    fn btn_connect_relay(&self) -> &'static str { "Connecter" }
+    fn btn_remove_relay(&self) -> &'static str { "Supprimer" }
 }

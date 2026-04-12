@@ -33,7 +33,8 @@ pub trait UiI18n: CoreI18n + AuthI18n + KeysI18n + ClipboardI18n + StoreUiI18n
     fn btn_find_relays(&self) -> &'static str;
     fn lbl_discovered_relays(&self) -> &'static str;
     fn relay_discovering(&self) -> &'static str;
-    fn relay_no_results(&self) -> &'static str;
+    fn btn_connect_relay(&self) -> &'static str;
+    fn btn_remove_relay(&self) -> &'static str;
 }
 
 /// Factory function to get the appropriate UiI18n implementation

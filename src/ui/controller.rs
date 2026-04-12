@@ -3,13 +3,11 @@ use zeroize::Zeroizing;
 use super::state::{WalletState, AuthState};
 use super::actions::*;
 use super::actions::{new_store_for_network, discover_relays};
-use super::status::TxStatus;
 use super::i18n::ui_i18n;
 use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
 use zsozso_store::Store;
 use zsozso_store::passkey;
-use zsozso_db::gundb::{GunSea, Sea};
-use zsozso_db::network::{NetworkGraph, GunNetworkGraph};
+use zsozso_db::gundb::GunDb;
 use super::clipboard::{copy_to_clipboard, clear_clipboard};
 use super::log;
 
@@ -21,12 +19,6 @@ pub struct AppController {
 impl AppController {
     pub fn new(state: WalletState) -> Self {
         Self { s: state }
-    }
-
-    /// Get the configured GUN relay peers from the relay URL signal.
-    fn gun_peers(&self) -> Vec<String> {
-        let url = self.s.gun_relay_url.read().clone();
-        if url.trim().is_empty() { vec![] } else { vec![url] }
     }
 
     /// Start passkey authentication (gate modal button).
@@ -94,19 +86,6 @@ impl AppController {
         modal.set(false);
     }
 
-    /// Copy the generated XDR to clipboard and show modal
-    pub fn copy_xdr_to_clipboard(&self) {
-        let xdr = self.s.generated_xdr.read().clone();
-        if !xdr.is_empty() {
-            copy_to_clipboard(&xdr);
-            let lang = *self.s.language.read();
-            let i18n = ui_i18n(lang);
-            log(&i18n.copied().to_string());
-            let mut modal = self.s.clipboard_modal_open;
-            modal.set(true);
-        }
-    }
-
     /// Dismiss the clipboard modal and clear clipboard content
     pub fn dismiss_clipboard_modal(&self) {
         clear_clipboard();
@@ -115,40 +94,6 @@ impl AppController {
         let lang = *self.s.language.read();
         let i18n = ui_i18n(lang);
         log(&i18n.clipboard_cleared().to_string());
-    }
-
-    /// Generate XDR for a manageData transaction that publishes the GUN relay URL on Testnet.
-    pub fn fetch_and_generate_xdr_action(&self) {
-        let secret_key = self.s.testnet_secret_key.read().as_ref().map(|s| s.to_string());
-        let relay_url = self.s.gun_relay_url.read().clone();
-        let net_env = NetworkEnvironment::Test;
-        let lang = *self.s.language.read();
-        let mut status = self.s.submission_status;
-        let mut xdr_signal = self.s.generated_xdr;
-
-        spawn(async move {
-            status.set(TxStatus::FetchingSequence);
-            match fetch_and_generate_xdr(secret_key, relay_url, net_env, lang).await {
-                Ok((xdr, next_status)) => {
-                    xdr_signal.set(xdr);
-                    status.set(next_status);
-                }
-                Err(e_status) => status.set(e_status),
-            }
-        });
-    }
-
-    /// Submit a transaction to the network (testnet).
-    pub fn submit_transaction_action(&self) {
-        let xdr = self.s.generated_xdr.read().clone();
-        let net_env = NetworkEnvironment::Test;
-        let lang = *self.s.language.read();
-        let mut status = self.s.submission_status;
-
-        spawn(async move {
-            status.set(TxStatus::Submitting);
-            status.set(submit_transaction(xdr, net_env, lang).await);
-        });
     }
 
     pub fn set_language(&self, code: &str) {
@@ -164,243 +109,144 @@ impl AppController {
         language.set(lang);
     }
 
-    /// Save the user's nickname to the graph database.
-    pub fn save_nickname_action(&self) {
-        let nickname = self.s.nickname.read().clone();
-        let public_key = self.s.public_key.read().clone();
-        let lang = *self.s.language.read();
-        let sea_pair = self.s.sea_key_pair.read().clone();
-        let peers = self.gun_peers();
-
-        // SEA keypair required for authenticated writes
-        if sea_pair.is_none() {
-            log("[save_nickname_action] No SEA keypair, opening modal");
-            self.open_sea_modal();
-            return;
-        }
-
-        let Some(pk) = public_key else {
-            log("[save_nickname_action] No public key");
-            return;
-        };
-
-        log(&format!("[save_nickname_action] Saving nickname '{}' for pk={}", nickname, pk));
-        spawn(async move {
-            let graph = GunNetworkGraph::new(lang, sea_pair, peers);
-            match graph.set_nickname(&pk, &nickname).await {
-                Ok(_) => {
-                    log("[save_nickname_action] Nickname saved successfully");
-                    let i18n = ui_i18n(lang);
-                    log(&i18n.nickname_saved().to_string());
-                }
-                Err(e) => {
-                    log(&format!("[save_nickname_action] Failed to save nickname: {}", e));
-                    let i18n = ui_i18n(lang);
-                    log(&i18n.nickname_save_error(&e));
-                }
-            }
-        });
-    }
-
-    /// Open the SEA key generation modal.
     /// Save the GUN relay URL to the graph database.
     pub fn save_gun_relay_action(&self) {
         let relay_url = self.s.gun_relay_url.read().clone();
-        let public_key = self.s.public_key.read().clone();
-        let lang = *self.s.language.read();
-        let sea_pair = self.s.sea_key_pair.read().clone();
-        let peers = if relay_url.trim().is_empty() { vec![] } else { vec![relay_url.clone()] };
 
-        if sea_pair.is_none() {
-            log("[save_gun_relay_action] No SEA keypair, opening modal");
-            self.open_sea_modal();
-            return;
+        // Always persist relay URL to localStorage
+        write_relay_url(&relay_url);
+
+        // Always add to connected relays list (triggers publish to Stellar)
+        if !relay_url.trim().is_empty() {
+            self.add_relay_action(relay_url.clone());
         }
+    }
 
-        let Some(pk) = public_key else {
-            log("[save_gun_relay_action] No public key");
-            return;
-        };
+    /// Check all connected relays for reachability.
+    pub fn check_all_relays_action(&self) {
+        let mut relays = self.s.connected_relays;
+        let entries = relays.read().clone();
+        if entries.is_empty() { return; }
+
+        // Mark all as checking
+        relays.set(entries.iter().map(|r| RelayEntry {
+            checking: true,
+            reachable: r.reachable,
+            ..r.clone()
+        }).collect());
 
         spawn(async move {
-            log(&format!("[save_gun_relay_action] Saving relay URL: {}", relay_url));
-            let graph = GunNetworkGraph::new(lang, sea_pair, peers);
-            match graph.set_gun_relay_url(&pk, &relay_url).await {
-                Ok(_) => log("[save_gun_relay_action] Relay URL saved successfully"),
-                Err(e) => log(&format!("[save_gun_relay_action] Failed to save relay URL: {}", e)),
+            let entries = relays.read().clone();
+            for (i, entry) in entries.iter().enumerate() {
+                log(&format!("[check_all_relays] Checking {}: {}", i, entry.url));
+                let ok = GunDb::check_relay(&entry.url, 5000).await.unwrap_or(false);
+                let mut current = relays.read().clone();
+                if let Some(r) = current.get_mut(i) {
+                    r.reachable = Some(ok);
+                    r.checking = false;
+                }
+                relays.set(current);
             }
         });
     }
 
-    /// Check if the configured GUN relay is reachable.
-    pub fn check_relay_action(&self) {
-        let relay_url = self.s.gun_relay_url.read().clone();
-        let mut status = self.s.relay_status;
-        let mut checking = self.s.relay_checking;
+    /// Add a relay URL to the connected relays list (if not already present and under limit).
+    pub fn add_relay_action(&self, url: String) {
+        let mut relays = self.s.connected_relays;
+        let current = relays.read().clone();
+        if current.len() >= MAX_RELAYS { return; }
+        if current.iter().any(|r| r.url == url) { return; }
 
-        if relay_url.trim().is_empty() {
-            status.set(None);
-            return;
-        }
+        // Persist to localStorage
+        add_persisted_relay(&url);
 
-        checking.set(true);
+        let mut new_list = current;
+        new_list.push(RelayEntry { url: url.clone(), reachable: None, checking: true });
+        relays.set(new_list);
 
+        let secret_key = self.s.testnet_secret_key.read().as_ref().map(|s| s.to_string());
+
+        // Check the newly added relay, then publish all to Stellar
         spawn(async move {
-            log(&format!("[check_relay] Checking relay: {}", relay_url));
-            let js_code = format!(
-                "window.__gun_bridge.checkRelay('{}')",
-                relay_url.replace('\'', "\\'")
-            );
-            let result = match js_sys::eval(&js_code) {
-                Ok(val) => {
-                    match wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(val)).await {
-                        Ok(json_val) => {
-                            let json_str = json_val.as_string().unwrap_or_default();
-                            log(&format!("[check_relay] Result: {}", json_str));
-                            json_str.contains("\"ok\":true")
+            log(&format!("[add_relay] Checking new relay: {}", url));
+            let ok = GunDb::check_relay(&url, 5000).await.unwrap_or(false);
+            let mut current = relays.read().clone();
+            if let Some(r) = current.iter_mut().find(|r| r.url == url) {
+                r.reachable = Some(ok);
+                r.checking = false;
+            }
+            relays.set(current);
+
+            // Publish all connected relays to Stellar
+            if let Some(sk) = secret_key {
+                let urls: Vec<String> = relays.read().iter().map(|r| r.url.clone()).collect();
+                if !urls.is_empty() {
+                    match publish_relays(&sk, &urls, NetworkEnvironment::Test).await {
+                        Ok(()) => {
+                            log(&format!("[add_relay] Published {} relays to Stellar", urls.len()));
                         }
                         Err(e) => {
-                            log(&format!("[check_relay] Promise error: {:?}", e));
-                            false
+                            log(&format!("[add_relay] Publish failed: {}", e));
                         }
                     }
                 }
-                Err(e) => {
-                    log(&format!("[check_relay] Eval error: {:?}", e));
-                    false
-                }
-            };
-            status.set(Some(result));
-            checking.set(false);
+            }
         });
+    }
+
+    /// Remove a relay URL from the connected relays list.
+    pub fn remove_relay_action(&self, url: String) {
+        let mut relays = self.s.connected_relays;
+        let mut current = relays.read().clone();
+        current.retain(|r| r.url != url);
+        relays.set(current);
+
+        // Remove from localStorage
+        remove_persisted_relay(&url);
     }
 
     /// Discover GUN relays published on Stellar testnet and check their connectivity.
     pub fn discover_relays_action(&self) {
         let mut relays_signal = self.s.discovered_relays;
         let mut discovering = self.s.discovering_relays;
+        let connected = self.s.connected_relays;
+        let own_address = self.s.testnet_public_key.read().clone();
 
         discovering.set(true);
         relays_signal.set(vec![]);
 
         spawn(async move {
-            let relays = discover_relays().await;
+            let connected_urls: std::collections::HashSet<String> =
+                connected.read().iter().map(|r| r.url.clone()).collect();
+
+            // Build known accounts list: our own address + previously discovered
+            let mut known = read_known_accounts();
+            if let Some(ref addr) = own_address {
+                if !known.contains(addr) {
+                    known.push(addr.clone());
+                }
+            }
+
+            let (relays, updated_accounts) = discover_relays(&connected_urls, &known).await;
+
+            // Persist the updated known accounts list
+            write_known_accounts(&updated_accounts);
+
             log(&format!("[discover_relays_action] Found {} relays, checking connectivity...", relays.len()));
 
-            // Set them immediately (reachable = None) so the UI shows them
             relays_signal.set(relays.clone());
 
-            // Now check each relay's connectivity
             for (i, relay) in relays.iter().enumerate() {
-                let js_code = format!(
-                    "window.__gun_bridge.checkRelay('{}', 4000)",
-                    relay.url.replace('\'', "\\'")
-                );
-                let reachable = match js_sys::eval(&js_code) {
-                    Ok(val) => {
-                        match wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(val)).await {
-                            Ok(json_val) => {
-                                let json_str = json_val.as_string().unwrap_or_default();
-                                json_str.contains("\"ok\":true")
-                            }
-                            Err(_) => false,
-                        }
-                    }
-                    Err(_) => false,
-                };
-                // Update the single relay's reachable status
+                let ok = GunDb::check_relay(&relay.url, 4000).await.unwrap_or(false);
                 let mut current = relays_signal.read().clone();
                 if let Some(r) = current.get_mut(i) {
-                    r.reachable = Some(reachable);
+                    r.reachable = Some(ok);
                 }
                 relays_signal.set(current);
             }
 
             discovering.set(false);
         });
-    }
-
-    pub fn open_sea_modal(&self) {
-        let mut open = self.s.sea_modal_open;
-        open.set(true);
-    }
-
-    /// Close the SEA key generation modal and zeroize the input.
-    pub fn close_sea_modal(&self) {
-        let mut open = self.s.sea_modal_open;
-        let mut input = self.s.sea_modal_input;
-        open.set(false);
-        input.set(Zeroizing::new(String::new()));
-    }
-
-    /// Generate a SEA key pair from the passphrase entered in the modal.
-    /// The passphrase is zeroized after use; the keys live only in memory.
-    pub fn generate_sea_keys(&self) {
-        let lang = *self.s.language.read();
-        let i18n = ui_i18n(lang);
-
-        let passphrase = self.s.sea_modal_input.read().clone();
-        if passphrase.is_empty() {
-            return;
-        }
-
-        let mut key_pair_signal = self.s.sea_key_pair;
-        let mut modal_open = self.s.sea_modal_open;
-        let mut modal_input = self.s.sea_modal_input;
-
-        let mut gun_address = self.s.gun_address;
-        let public_key = self.s.public_key.read().clone();
-        let mut sss_shares = self.s.sss_shares;
-        let peers = self.gun_peers();
-
-        spawn(async move {
-            log("[generate_sea_keys] Starting SEA key generation from passphrase");
-            let sea = GunSea::new(lang);
-            match sea.pair_from_seed(&passphrase).await {
-                Ok(pair) => {
-                    log(&format!("[generate_sea_keys] SEA keys generated. pub_key={}", &pair.pub_key));
-                    gun_address.set(pair.pub_key.clone());
-
-                    // Store GUN address to GunDB if we have a Stellar public key
-                    if let Some(pk) = &public_key {
-                        log(&format!("[generate_sea_keys] Storing GUN address to GunDB for node {}", pk));
-                        let graph = GunNetworkGraph::new(lang, Some(pair.clone()), peers.clone());
-                        if let Err(e) = graph.set_gun_address(pk, &pair.pub_key).await {
-                            log(&format!("[generate_sea_keys] Failed to store GUN address: {}", e));
-                        } else {
-                            log("[generate_sea_keys] GUN address stored successfully");
-                        }
-                    }
-
-                    key_pair_signal.set(Some(pair));
-
-                    // Split the passphrase into SSS shares (7 shares, threshold 3)
-                    let shares = crate::sss::split(passphrase.as_bytes(), 3, 7);
-                    let share_strings: Vec<String> = shares.iter()
-                        .map(|s| crate::sss::share_to_hex(s))
-                        .collect();
-                    log(&format!("[generate_sea_keys] SSS shares generated: {} shares, threshold 3", share_strings.len()));
-                    sss_shares.set(Some(share_strings));
-
-                    let i18n = ui_i18n(lang);
-                    log(&i18n.sea_keys_generated().to_string());
-                }
-                Err(e) => {
-                    log(&format!("[generate_sea_keys] SEA key generation failed: {}", e));
-                    let i18n = ui_i18n(lang);
-                    log(&i18n.sea_generation_error(&e));
-                }
-            }
-            // Zeroize the passphrase input and close the modal
-            modal_input.set(Zeroizing::new(String::new()));
-            modal_open.set(false);
-        });
-    }
-
-    /// Dismiss the SSS shares modal.
-    pub fn dismiss_sss_modal(&self) {
-        let mut sss = self.s.sss_shares;
-        sss.set(None);
     }
 
     // ── Dual-key methods ───────────────────────────────────────────────
@@ -499,13 +345,9 @@ impl AppController {
     pub fn activate_test_account_for_testnet(&self) {
         let pubkey = self.s.testnet_public_key.read().clone();
         let lang = *self.s.language.read();
-        let mut status = self.s.submission_status;
 
         spawn(async move {
-            status.set(TxStatus::CallingFaucet);
-            if let Some(next_status) = activate_test_account(pubkey, NetworkEnvironment::Test, lang).await {
-                status.set(next_status);
-            }
+            let _ = activate_test_account(pubkey, NetworkEnvironment::Test, lang).await;
         });
     }
 
@@ -621,6 +463,7 @@ impl AppController {
         let mut tn_sk = self.s.testnet_secret_key;
         let mut pk_signal = self.s.public_key;
         let mut sk_signal = self.s.secret_key_hidden;
+        let mut connected_relays = self.s.connected_relays;
 
         log(&i18n.loading_started().to_string());
 
@@ -751,6 +594,67 @@ impl AppController {
                 sk_signal.set(tn_sk.read().clone());
             }
 
+            // Load saved relay URLs into connected relays and check reachability
+            let saved = read_relay_urls();
+            for relay_url in &saved {
+                let current = connected_relays.read().clone();
+                if current.iter().any(|r| r.url == *relay_url) { continue; }
+                let mut list = current;
+                list.push(RelayEntry { url: relay_url.clone(), reachable: None, checking: true });
+                connected_relays.set(list);
+
+                let ok = GunDb::check_relay(relay_url, 5000).await.unwrap_or(false);
+                let mut current = connected_relays.read().clone();
+                if let Some(r) = current.iter_mut().find(|r| r.url == *relay_url) {
+                    r.reachable = Some(ok);
+                    r.checking = false;
+                }
+                connected_relays.set(current);
+                log(&format!("[load_all] Relay {} reachable: {}", relay_url, ok));
+            }
+
+            // Auto-create testnet key if none was loaded
+            if tn_pk.read().is_none() {
+                log("[load_all] No testnet key found, generating one...");
+                let (pk, sk) = generate_keypair(NetworkEnvironment::Test, lang);
+                tn_pk.set(Some(pk.clone()));
+                tn_sk.set(Some(Zeroizing::new(sk.clone())));
+                pk_signal.set(Some(pk.clone()));
+                sk_signal.set(Some(Zeroizing::new(sk.clone())));
+
+                // Save the new key to store immediately
+                let store = new_store_for_network(lang, NetworkEnvironment::Test);
+                let data = if let Some(ref prf) = prf {
+                    match passkey::passkey_encrypt(&sk, prf).await {
+                        Ok(encrypted) => encrypted,
+                        Err(_) => sk.clone(),
+                    }
+                } else {
+                    sk
+                };
+                let _ = store.save(&data).await;
+                log("[load_all] Testnet key auto-generated and saved");
+
+                // Activate via faucet
+                let _ = activate_test_account(Some(pk), NetworkEnvironment::Test, lang).await;
+            }
+
+            // Re-publish all connected relays to Stellar Testnet
+            let relay_urls: Vec<String> = connected_relays.read().iter().map(|r| r.url.clone()).collect();
+            if let Some(ref sk) = *tn_sk.read() {
+                if !relay_urls.is_empty() {
+                    log(&format!("[load_all] Publishing {} relays to Stellar...", relay_urls.len()));
+                    match publish_relays(sk.as_str(), &relay_urls, NetworkEnvironment::Test).await {
+                        Ok(()) => {
+                            log("[load_all] Relays published to Stellar");
+                        }
+                        Err(e) => {
+                            log(&format!("[load_all] Publish failed: {}", e));
+                        }
+                    }
+                }
+            }
+
             log(&ui_i18n(lang).ui_updated_with_key().to_string());
         });
     }
@@ -776,5 +680,76 @@ fn write_biometric_pref(enabled: bool) {
         .flatten()
     {
         let _ = storage.set_item("gun-connect:biometric", if enabled { "true" } else { "false" });
+    }
+}
+
+/// Write relay URL to localStorage.
+fn write_relay_url(url: &str) {
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("gun-connect:relay_url", url);
+    }
+}
+
+/// Read all saved relay URLs from localStorage.
+fn read_relay_urls() -> Vec<String> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+        .and_then(|s| s.get_item("gun-connect:relay_urls").ok())
+        .flatten()
+        .map(|s| s.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        .unwrap_or_default()
+}
+
+/// Write all saved relay URLs to localStorage.
+fn write_relay_urls(urls: &[String]) {
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("gun-connect:relay_urls", &urls.join("\n"));
+    }
+}
+
+/// Add a relay URL to the persisted list (dedup, max 5).
+fn add_persisted_relay(url: &str) {
+    let mut urls = read_relay_urls();
+    if !urls.iter().any(|u| u == url) {
+        urls.push(url.to_string());
+        if urls.len() > MAX_RELAYS {
+            urls.remove(0);
+        }
+        write_relay_urls(&urls);
+    }
+}
+
+/// Remove a relay URL from the persisted list.
+fn remove_persisted_relay(url: &str) {
+    let mut urls = read_relay_urls();
+    urls.retain(|u| u != url);
+    write_relay_urls(&urls);
+}
+
+/// Read known relay operator accounts from localStorage.
+fn read_known_accounts() -> Vec<String> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+        .and_then(|s| s.get_item("gun-connect:known_accounts").ok())
+        .flatten()
+        .map(|s| s.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        .unwrap_or_default()
+}
+
+/// Write known relay operator accounts to localStorage.
+fn write_known_accounts(accounts: &[String]) {
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("gun-connect:known_accounts", &accounts.join("\n"));
     }
 }

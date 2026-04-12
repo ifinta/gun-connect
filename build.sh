@@ -40,6 +40,9 @@ fi
 echo "APP_VERSION → ${APP_VERSION}"
 $DRY && exit 0
 
+# ── Sync JS bridge files from library repos ───────────────────────────────────
+./sync-bridges.sh
+
 # For different builds, patch Dioxus.toml paths to match the right prefix
 sed -i "s|.*base_path =.*|base_path = \"${PREFIX}\"|g" Dioxus.toml
 echo "Patched Dioxus.toml for different (-ghpages for Github Pages) deployments"

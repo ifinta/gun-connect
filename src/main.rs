@@ -1,4 +1,3 @@
-pub mod sss;
 mod ui;
 
 use dioxus::prelude::*;

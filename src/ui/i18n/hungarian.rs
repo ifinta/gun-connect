@@ -32,5 +32,6 @@ impl UiI18n for HungarianUi {
     fn btn_find_relays(&self) -> &'static str { "Relay-ek Keresése" }
     fn lbl_discovered_relays(&self) -> &'static str { "Talált Relay-ek" }
     fn relay_discovering(&self) -> &'static str { "Keresés..." }
-    fn relay_no_results(&self) -> &'static str { "Nem található relay a testneten" }
+    fn btn_connect_relay(&self) -> &'static str { "Csatlakozás" }
+    fn btn_remove_relay(&self) -> &'static str { "Eltávolítás" }
 }
