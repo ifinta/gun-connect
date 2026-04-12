@@ -288,6 +288,36 @@
         console.log("[gun_bridge.addPeer] Peer added:", peerUrl);
     }
 
+    /**
+     * Check if a GUN relay is reachable by attempting a fetch to its URL.
+     * GUN relays serve a short HTML page on HTTP GET, so a successful
+     * fetch (any 2xx) means the relay is up.
+     * @param {string} relayUrl - The relay URL, e.g. "https://gun-relay.example.com/gun"
+     * @param {number} timeoutMs - Timeout in milliseconds (default 5000)
+     * @returns {Promise<string>} - JSON: {"ok":true} or {"ok":false,"error":"..."}
+     */
+    async function checkRelay(relayUrl, timeoutMs) {
+        timeoutMs = timeoutMs || 5000;
+        console.log("[gun_bridge.checkRelay] url=", relayUrl, "timeout=", timeoutMs);
+        try {
+            var controller = new AbortController();
+            var timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+            var resp = await fetch(relayUrl, {
+                method: "GET",
+                mode: "no-cors",
+                signal: controller.signal,
+            });
+            clearTimeout(timer);
+            // mode: "no-cors" gives opaque response (status=0, type="opaque") if CORS
+            // blocks. That still proves the server is reachable.
+            console.log("[gun_bridge.checkRelay] response type=", resp.type, "status=", resp.status);
+            return JSON.stringify({ ok: true });
+        } catch (e) {
+            console.log("[gun_bridge.checkRelay] ERROR:", e.message || e);
+            return JSON.stringify({ ok: false, error: String(e.message || e) });
+        }
+    }
+
     // Expose on window
     window.__gun_bridge = {
         init: init,
@@ -299,5 +329,6 @@
         poll: poll,
         off: off,
         dump: dump,
+        checkRelay: checkRelay,
     };
 })();

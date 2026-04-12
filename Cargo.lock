@@ -1436,6 +1436,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "gun-connect"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "dioxus",
+ "ed25519-dalek",
+ "getrandom 0.3.4",
+ "gloo-timers",
+ "js-sys",
+ "qrcode",
+ "rand",
+ "reqwest 0.12.28",
+ "rexie",
+ "serde",
+ "serde_json",
+ "sha2",
+ "stellar-strkey",
+ "stellar-xdr",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "zeroize",
+ "zsozso-common",
+ "zsozso-db",
+ "zsozso-ledger",
+ "zsozso-store",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4298,39 +4328,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
-name = "zsozso"
-version = "0.1.0"
-dependencies = [
- "base64",
- "dioxus",
- "ed25519-dalek",
- "getrandom 0.3.4",
- "gloo-timers",
- "js-sys",
- "qrcode",
- "rand",
- "reqwest 0.12.28",
- "rexie",
- "serde",
- "serde_json",
- "sha2",
- "stellar-strkey",
- "stellar-xdr",
- "tracing",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "zeroize",
- "zsozso-common",
- "zsozso-db",
- "zsozso-ledger",
- "zsozso-store",
-]
-
-[[package]]
 name = "zsozso-common"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ifinta/zsozso-common.git#9d1b1776459296e96bce4eacf4f8f11034d69a21"
 
 [[package]]
 name = "zsozso-db"

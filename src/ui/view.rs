@@ -45,7 +45,7 @@ pub fn render_app(s: WalletState, ctrl: AppController) -> Element {
         return rsx! {
             div { style: "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; font-family: sans-serif;",
                 div { style: "background: white; padding: 40px; border-radius: 16px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3);",
-                    h2 { style: "margin: 0 0 12px; color: #333;", "Zsozso" }
+                    h2 { style: "margin: 0 0 12px; color: #333;", "Gun Connect" }
                     p { style: "margin: 0 0 30px; color: #666; font-size: 1em;",
                         "{i18n.gate_title()}"
                     }
@@ -66,13 +66,13 @@ pub fn render_app(s: WalletState, ctrl: AppController) -> Element {
         div { style: "display: flex; flex-direction: column; height: 100vh; max-width: 550px; margin: auto; font-family: sans-serif;",
             // Header
             div { style: "padding: 15px 30px 0;",
-                h2 { style: "margin: 0;", "Zsozso" }
+                h2 { style: "margin: 0;", "Gun Connect" }
             }
 
             // Tab content (scrollable area)
             div { style: "flex: 1; overflow-y: auto; padding: 20px 30px 90px;",
                 match active {
-                    Tab::Info => info::render_info_tab(s, i18n.as_ref()),
+                    Tab::Info => info::render_info_tab(s, ctrl, i18n.as_ref()),
                     Tab::Settings => settings::render_settings_tab(s, ctrl, i18n.as_ref()),
                 }
             }

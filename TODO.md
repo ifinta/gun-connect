@@ -2,7 +2,7 @@
 
 ## simple steps:
 - setup a gun server
-- implement relay connection status display
+- ~~implement relay connection status display~~ (done — Info tab shows relay status with check button)
 
 ## known issues:
 #### (not yet solved, but it isn't mandatory to correct it):
@@ -19,10 +19,10 @@
 - Shared IndexedDB / localStorage — same-origin apps read/write shared storage
 
 ## bigger steps:
-- generate unique app icons (icon-192.png, icon-512.png): GUN symbol with a connector
+- ~~generate unique app icons~~ (done)
 - a good graphics design (styles...(learn it) use components!)
 - remove unused tabs (CYF, Zsozso, Networking, Log) and their controller methods
-- integrate db, ledger, store as git submodules instead of copied source
+- ~~integrate db, ledger, store as git submodules instead of copied source~~ (done — now Cargo git deps via zsozso-common/zsozso-db/zsozso-ledger/zsozso-store)
 
 # for dev's:
 

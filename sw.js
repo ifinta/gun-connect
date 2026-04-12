@@ -1,5 +1,5 @@
 // Change this two rows! No other change in this file is a need.
-var MESSAGE_PREFIX = 'ZSOZSO';
+var MESSAGE_PREFIX = 'GUN_CONNECT';
 var __BASE_PREFIX = '/app/';
 // The build.sh replaces it with a real APP_VERSION string...
 var APP_VERSION = 'version';

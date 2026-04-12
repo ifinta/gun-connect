@@ -5,13 +5,14 @@ use zsozso_common::Language;
 use zsozso_db::gundb::SeaKeyPair;
 use super::status::TxStatus;
 use super::tabs::Tab;
+use super::actions::DiscoveredRelay;
 
 /// Read biometric preference from localStorage (synchronous).
 fn biometric_enabled_default() -> bool {
     web_sys::window()
         .and_then(|w| w.local_storage().ok())
         .flatten()
-        .and_then(|s| s.get_item("zsozso:biometric").ok())
+        .and_then(|s| s.get_item("gun-connect:biometric").ok())
         .flatten()
         .map(|v| v == "true")
         .unwrap_or(false)
@@ -55,6 +56,14 @@ pub struct WalletState {
     pub gun_address: Signal<String>,
     /// Optional GUN relay URL — if the user runs their own GUN DB node.
     pub gun_relay_url: Signal<String>,
+    /// Relay connection status: None = not checked, Some(true) = connected, Some(false) = unreachable.
+    pub relay_status: Signal<Option<bool>>,
+    /// Whether a relay check is currently in progress.
+    pub relay_checking: Signal<bool>,
+    /// Discovered relays from Stellar testnet.
+    pub discovered_relays: Signal<Vec<DiscoveredRelay>>,
+    /// Whether relay discovery is in progress.
+    pub discovering_relays: Signal<bool>,
     /// SSS shares modal — when Some, shows the modal with the share strings.
     pub sss_shares: Signal<Option<Vec<String>>>,
     /// Stored mainnet public key.
@@ -99,6 +108,10 @@ pub fn use_wallet_state() -> WalletState {
         nickname: use_signal(String::new),
         gun_address: use_signal(String::new),
         gun_relay_url: use_signal(String::new),
+        relay_status: use_signal(|| None),
+        relay_checking: use_signal(|| false),
+        discovered_relays: use_signal(Vec::new),
+        discovering_relays: use_signal(|| false),
         sss_shares: use_signal(|| None),
         mainnet_public_key: use_signal(|| None),
         testnet_public_key: use_signal(|| None),

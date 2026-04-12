@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use zeroize::Zeroizing;
 use super::state::{WalletState, AuthState};
 use super::actions::*;
-use super::actions::new_store_for_network;
+use super::actions::{new_store_for_network, discover_relays};
 use super::status::TxStatus;
 use super::i18n::ui_i18n;
 use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
@@ -117,9 +117,10 @@ impl AppController {
         log(&i18n.clipboard_cleared().to_string());
     }
 
-    /// Generate XDR based on account data — always uses Testnet address.
+    /// Generate XDR for a manageData transaction that publishes the GUN relay URL on Testnet.
     pub fn fetch_and_generate_xdr_action(&self) {
         let secret_key = self.s.testnet_secret_key.read().as_ref().map(|s| s.to_string());
+        let relay_url = self.s.gun_relay_url.read().clone();
         let net_env = NetworkEnvironment::Test;
         let lang = *self.s.language.read();
         let mut status = self.s.submission_status;
@@ -127,7 +128,7 @@ impl AppController {
 
         spawn(async move {
             status.set(TxStatus::FetchingSequence);
-            match fetch_and_generate_xdr(secret_key, net_env, lang).await {
+            match fetch_and_generate_xdr(secret_key, relay_url, net_env, lang).await {
                 Ok((xdr, next_status)) => {
                     xdr_signal.set(xdr);
                     status.set(next_status);
@@ -228,6 +229,94 @@ impl AppController {
                 Ok(_) => log("[save_gun_relay_action] Relay URL saved successfully"),
                 Err(e) => log(&format!("[save_gun_relay_action] Failed to save relay URL: {}", e)),
             }
+        });
+    }
+
+    /// Check if the configured GUN relay is reachable.
+    pub fn check_relay_action(&self) {
+        let relay_url = self.s.gun_relay_url.read().clone();
+        let mut status = self.s.relay_status;
+        let mut checking = self.s.relay_checking;
+
+        if relay_url.trim().is_empty() {
+            status.set(None);
+            return;
+        }
+
+        checking.set(true);
+
+        spawn(async move {
+            log(&format!("[check_relay] Checking relay: {}", relay_url));
+            let js_code = format!(
+                "window.__gun_bridge.checkRelay('{}')",
+                relay_url.replace('\'', "\\'")
+            );
+            let result = match js_sys::eval(&js_code) {
+                Ok(val) => {
+                    match wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(val)).await {
+                        Ok(json_val) => {
+                            let json_str = json_val.as_string().unwrap_or_default();
+                            log(&format!("[check_relay] Result: {}", json_str));
+                            json_str.contains("\"ok\":true")
+                        }
+                        Err(e) => {
+                            log(&format!("[check_relay] Promise error: {:?}", e));
+                            false
+                        }
+                    }
+                }
+                Err(e) => {
+                    log(&format!("[check_relay] Eval error: {:?}", e));
+                    false
+                }
+            };
+            status.set(Some(result));
+            checking.set(false);
+        });
+    }
+
+    /// Discover GUN relays published on Stellar testnet and check their connectivity.
+    pub fn discover_relays_action(&self) {
+        let mut relays_signal = self.s.discovered_relays;
+        let mut discovering = self.s.discovering_relays;
+
+        discovering.set(true);
+        relays_signal.set(vec![]);
+
+        spawn(async move {
+            let relays = discover_relays().await;
+            log(&format!("[discover_relays_action] Found {} relays, checking connectivity...", relays.len()));
+
+            // Set them immediately (reachable = None) so the UI shows them
+            relays_signal.set(relays.clone());
+
+            // Now check each relay's connectivity
+            for (i, relay) in relays.iter().enumerate() {
+                let js_code = format!(
+                    "window.__gun_bridge.checkRelay('{}', 4000)",
+                    relay.url.replace('\'', "\\'")
+                );
+                let reachable = match js_sys::eval(&js_code) {
+                    Ok(val) => {
+                        match wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(val)).await {
+                            Ok(json_val) => {
+                                let json_str = json_val.as_string().unwrap_or_default();
+                                json_str.contains("\"ok\":true")
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    Err(_) => false,
+                };
+                // Update the single relay's reachable status
+                let mut current = relays_signal.read().clone();
+                if let Some(r) = current.get_mut(i) {
+                    r.reachable = Some(reachable);
+                }
+                relays_signal.set(current);
+            }
+
+            discovering.set(false);
         });
     }
 
@@ -686,6 +775,6 @@ fn write_biometric_pref(enabled: bool) {
         .and_then(|w| w.local_storage().ok())
         .flatten()
     {
-        let _ = storage.set_item("zsozso:biometric", if enabled { "true" } else { "false" });
+        let _ = storage.set_item("gun-connect:biometric", if enabled { "true" } else { "false" });
     }
 }

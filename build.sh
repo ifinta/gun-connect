@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh — build zsozso and create deployment bundle
+# build.sh — build gun-connect and create deployment bundle
 #
 # Pipeline:
 #   1. Run `dx build --release --platform web --features web`
@@ -27,7 +27,7 @@ done
 BUILD_TS="$(date +%Y%m%d-%H%M)"
 GIT_HASH="$(git rev-parse --short=8 HEAD)"
 
-APP_NAME="zsozso"
+APP_NAME="gun-connect"
 # Deployment prefix: /app/ for live server, /zsozso-dioxus/ for GitHub Pages
 if $GHPAGES; then
   PREFIX="zsozso-dioxus"

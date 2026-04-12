@@ -1,5 +1,5 @@
 [package]
-name = "zsozso"
+name = "gun-connect"
 version = "0.1.0"
 edition = "2024"
 
@@ -60,3 +60,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
+
+[patch."ssh://git@github.com/ifinta/zsozso-common.git"]
+zsozso-common = { path = "../zsozso-common" }

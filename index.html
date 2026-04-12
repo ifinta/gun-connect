@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zsozso - </title>
+    <title>Gun Connect</title>
     
     <!-- PWA Manifest and Theme -->
     <link rel="manifest" href="manifest.json">
@@ -12,7 +12,7 @@
     <!-- iOS PWA Support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Zsozso">
+    <meta name="apple-mobile-web-app-title" content="Gun Connect">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.ico">
@@ -32,7 +32,7 @@
     <link rel="preload" as="image" href="icon-512.png">
 
     <!-- App version — stamped by build.sh; must precede SW registration -->
-    <script>window.__APP_VERSION = 'zsozso-20260309-1646-4390b62b';</script>
+    <script>window.__APP_VERSION = 'gun-connect-dev';</script>
 </head>
 <body>
     <div id="sw-update-banner" style="display:none; position:fixed; top:0; left:0; width:100%;
@@ -45,7 +45,7 @@
     </div>
     <div id="main"></div>
     <script>
-        let APP_NAME = 'ZSOZSO'; // for the update message...
+        let APP_NAME = 'GUN CONNECT'; // for the update message...
         let PREFIX = "app";
         if ( document.getElementById('spinner') && 'serviceWorker' in navigator) {
             // bootloader logic: ensure SW is registered and controlling the page, then reload if needed

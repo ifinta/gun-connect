@@ -1,7 +1,7 @@
 {
-    "name": "Zsozso App",
-    "short_name": "Zsozso",
-    "description": "A Stellar App for the Iceberg Protocol ecosystem",
+    "name": "Gun Connect",
+    "short_name": "Gun Connect",
+    "description": "GUN relay connector for the Iceberg Protocol ecosystem",
     "id": "/app/",
     "start_url": "/app/",
     "scope": "/app/",
