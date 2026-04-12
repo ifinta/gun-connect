@@ -14,12 +14,21 @@ use stellar_xdr::curr::{
     ManageDataOp, String64, DataValue, StringM,
 };
 use sha2::{Sha256, Digest};
-use serde::Deserialize;
 
 fn log(msg: &str) { web_sys::console::log_1(&msg.into()); }
 
 /// The well-known manageData key used to publish GUN relay URLs on Stellar.
 pub const MANAGE_DATA_KEY: &str = "gun_connect_relay";
+
+/// Check if a Stellar data entry key is a relay key (`NN_gun_connect_relay`).
+pub fn is_relay_key(key: &str) -> bool {
+    key.ends_with(&format!("_{}", MANAGE_DATA_KEY))
+}
+
+/// Generate the manageData key name for a relay at the given index.
+fn relay_key_name(index: usize) -> String {
+    format!("{:02}_{}", index, MANAGE_DATA_KEY)
+}
 
 pub async fn activate_test_account(pubkey: Option<String>, net_env: NetworkEnvironment, lang: Language) -> Result<String, String> {
     let pubkey = pubkey.ok_or_else(|| "No public key".to_string())?;
@@ -29,7 +38,7 @@ pub async fn activate_test_account(pubkey: Option<String>, net_env: NetworkEnvir
 
 /// Build, sign and submit a manageData transaction that publishes all connected relay URLs.
 ///
-/// Each relay gets its own manageData key: `gun_connect_relay`, `gun_connect_relay_1`, etc.
+/// Each relay gets its own manageData key: `00_gun_connect_relay`, `01_gun_connect_relay`, etc.
 /// Old keys beyond the current list length are cleared (set to None).
 pub async fn publish_relays(
     secret_key: &str,
@@ -50,30 +59,39 @@ pub async fn publish_relays(
     let pub_bytes = signing_key.verifying_key().to_bytes();
     let public_key_str = Strkey::PublicKeyEd25519(ed25519::PublicKey(pub_bytes)).to_string();
 
-    // Fetch sequence number
+    // Fetch account: sequence number + existing data keys
     let horizon = horizon_url(net_env);
     let client = reqwest::Client::new();
     let url = format!("{}/accounts/{}", horizon, public_key_str);
     let response = client.get(&url).send().await
         .map_err(|e| format!("Horizon unreachable: {}", e))?;
     if !response.status().is_success() {
-        return Err("Account not found — activate with faucet first".into());
+        return Err("Account not found \u{2014} activate with faucet first".into());
     }
 
-    #[derive(Deserialize)]
-    struct Acct { sequence: String }
-    let acct: Acct = response.json().await
+    let acct_body: serde_json::Value = response.json().await
         .map_err(|e| format!("JSON error: {}", e))?;
-    let next_seq: i64 = acct.sequence.parse::<i64>().unwrap_or(0) + 1;
+    let next_seq: i64 = acct_body.get("sequence")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(0) + 1;
+
+    // Collect existing relay data keys on-chain
+    let existing_keys: std::collections::HashSet<String> = acct_body.get("data")
+        .and_then(|d| d.as_object())
+        .map(|data| {
+            data.keys()
+                .filter(|k| is_relay_key(k))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    log(&format!("[publish_relays] Account has {} existing relay key(s)", existing_keys.len()));
 
     // Build manageData operations — one per relay URL
     let mut ops = Vec::new();
     for (i, relay_url) in relay_urls.iter().enumerate() {
-        let key_name = if i == 0 {
-            MANAGE_DATA_KEY.to_string()
-        } else {
-            format!("{}_{}", MANAGE_DATA_KEY, i)
-        };
+        let key_name = relay_key_name(i);
         ops.push(Operation {
             source_account: None,
             body: OperationBody::ManageData(ManageDataOp {
@@ -85,21 +103,22 @@ pub async fn publish_relays(
         });
     }
 
-    // Clear old keys beyond current list (up to MAX_RELAYS)
-    for i in relay_urls.len()..MAX_RELAYS {
-        let key_name = if i == 0 {
-            MANAGE_DATA_KEY.to_string()
-        } else {
-            format!("{}_{}", MANAGE_DATA_KEY, i)
-        };
-        ops.push(Operation {
-            source_account: None,
-            body: OperationBody::ManageData(ManageDataOp {
-                data_name: String64(StringM::try_from(key_name.as_str())
-                    .map_err(|e| format!("Key too long: {}", e))?),
-                data_value: None, // None = delete the entry
-            }),
-        });
+    // Only delete keys that exist on-chain but aren't being overwritten
+    let written_keys: std::collections::HashSet<String> = relay_urls.iter().enumerate()
+        .map(|(i, _)| relay_key_name(i))
+        .collect();
+    for old_key in &existing_keys {
+        if !written_keys.contains(old_key) {
+            log(&format!("[publish_relays] Deleting old key: {}", old_key));
+            ops.push(Operation {
+                source_account: None,
+                body: OperationBody::ManageData(ManageDataOp {
+                    data_name: String64(StringM::try_from(old_key.as_str())
+                        .map_err(|e| format!("Key too long: {}", e))?),
+                    data_value: None,
+                }),
+            });
+        }
     }
 
     let current_unix_time = (js_sys::Date::now() / 1000.0) as u64;
@@ -206,10 +225,10 @@ pub async fn discover_relays(
 ) -> (Vec<DiscoveredRelay>, Vec<String>) {
     let horizon = horizon_url(NetworkEnvironment::Test);
     let client = reqwest::Client::new();
-    let key_prefix = MANAGE_DATA_KEY;
 
     let mut seen_urls = std::collections::HashSet::<String>::new();
     let mut relays = Vec::new();
+    let mut phase1_total_found: usize = 0;
     let mut all_accounts = std::collections::HashSet::<String>::new();
     for a in known_accounts { all_accounts.insert(a.clone()); }
 
@@ -225,10 +244,10 @@ pub async fn discover_relays(
             Ok(v) => v,
             Err(_) => continue,
         };
-        // The `data` field is an object: { "gun_connect_relay": "base64...", ... }
+        // The `data` field is an object: { "00_gun_connect_relay": "base64...", ... }
         if let Some(data) = body.get("data").and_then(|d| d.as_object()) {
             for (key, val) in data {
-                if key != key_prefix && !key.starts_with(&format!("{}_", key_prefix)) {
+                if !is_relay_key(key) {
                     continue;
                 }
                 let b64 = match val.as_str() {
@@ -245,6 +264,7 @@ pub async fn discover_relays(
                     Ok(s) => s,
                     Err(_) => continue,
                 };
+                phase1_total_found += 1;
                 if !exclude.contains(&relay_url) && seen_urls.insert(relay_url.clone()) {
                     relays.push(DiscoveredRelay {
                         url: relay_url,
@@ -254,7 +274,7 @@ pub async fn discover_relays(
             }
         }
     }
-    log(&format!("[discover_relays] Phase 1: {} relays from known accounts", relays.len()));
+    log(&format!("[discover_relays] Phase 1: {} relays from known accounts ({} new)", phase1_total_found, relays.len()));
 
     // ── Phase 2: Scan global operations to discover new accounts ────
     log("[discover_relays] Scanning global operations for new accounts...");
@@ -287,7 +307,7 @@ pub async fn discover_relays(
 
         for record in &records {
             let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            if name != key_prefix && !name.starts_with(&format!("{}_", key_prefix)) {
+            if !is_relay_key(name) {
                 continue;
             }
             let account = match record.get("source_account").and_then(|v| v.as_str()) {
@@ -308,7 +328,7 @@ pub async fn discover_relays(
                 };
                 if let Some(data) = acct_body.get("data").and_then(|d| d.as_object()) {
                     for (key, val) in data {
-                        if key != key_prefix && !key.starts_with(&format!("{}_", key_prefix)) {
+                        if !is_relay_key(key) {
                             continue;
                         }
                         let b64 = match val.as_str() {
