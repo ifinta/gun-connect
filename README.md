@@ -26,8 +26,8 @@ PWA app for connecting a GUN relay node to a mobile device. Manages GUN database
 ## Build & Run
 
 ```bash
-# Clone with submodules
-git clone --recurse-submodules git@github.com:ifinta/gun-connect.git
+# Clone
+git clone git@github.com:ifinta/gun-connect.git
 cd gun-connect
 
 # Dev server with hot-reload
@@ -45,7 +45,8 @@ Prerequisites: `rustup target add wasm32-unknown-unknown` and `cargo install dio
 ## Related Repositories
 
 - [zsozso.info](https://zsozso.info) — Project website & whitepaper
-- [db](https://github.com/ifinta/db) — GUN.js database (git submodule)
-- [ledger](https://github.com/ifinta/ledger) — Stellar blockchain (git submodule)
-- [store](https://github.com/ifinta/store) — Encrypted persistence (git submodule)
+- [zsozso-common](https://github.com/ifinta/zsozso-common) — Language enum, i18n traits (Cargo git dep)
+- [db](https://github.com/ifinta/db) — GUN.js database (Cargo git dep)
+- [ledger](https://github.com/ifinta/ledger) — Stellar blockchain (Cargo git dep)
+- [store](https://github.com/ifinta/store) — Encrypted persistence (Cargo git dep)
 - [zsozso-sc](https://github.com/ifinta/zsozso-sc) — Soroban smart contracts

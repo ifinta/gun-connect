@@ -8,8 +8,12 @@ impl I18nLanguage for SpanishUi {
     fn language(&self) -> Language { Language::Spanish }
 }
 
-impl CoreI18n for SpanishUi {}
-impl AuthI18n for SpanishUi {}
+impl CoreI18n for SpanishUi {
+    fn toast_update_available(&self) -> &'static str { "\u{1F680} ¡Una nueva versión de Gun Connect está disponible!" }
+}
+impl AuthI18n for SpanishUi {
+    fn gate_title(&self) -> &'static str { "Bienvenido a Gun Connect" }
+}
 impl KeysI18n for SpanishUi {}
 impl ClipboardI18n for SpanishUi {}
 impl StoreUiI18n for SpanishUi {}

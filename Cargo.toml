@@ -60,3 +60,19 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
+
+# ── Local development overrides ───────────────────────────────────────────────
+# Uncomment to use local library checkouts instead of git.
+# Run `cargo update` after toggling.
+#
+# [patch."ssh://git@github.com/ifinta/zsozso-common.git"]
+# zsozso-common = { path = "../zsozso-common" }
+#
+# [patch."ssh://git@github.com/ifinta/db.git"]
+# zsozso-db = { path = "../db" }
+#
+# [patch."ssh://git@github.com/ifinta/ledger.git"]
+# zsozso-ledger = { path = "../ledger" }
+#
+# [patch."ssh://git@github.com/ifinta/store.git"]
+# zsozso-store = { path = "../store" }

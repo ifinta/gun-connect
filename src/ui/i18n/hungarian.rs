@@ -8,8 +8,12 @@ impl I18nLanguage for HungarianUi {
     fn language(&self) -> Language { Language::Hungarian }
 }
 
-impl CoreI18n for HungarianUi {}
-impl AuthI18n for HungarianUi {}
+impl CoreI18n for HungarianUi {
+    fn toast_update_available(&self) -> &'static str { "\u{1F680} A Gun Connect új verziója elérhető!" }
+}
+impl AuthI18n for HungarianUi {
+    fn gate_title(&self) -> &'static str { "Üdvözöl a Gun Connect" }
+}
 impl KeysI18n for HungarianUi {}
 impl ClipboardI18n for HungarianUi {}
 impl StoreUiI18n for HungarianUi {}

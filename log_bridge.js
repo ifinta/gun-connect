@@ -57,7 +57,7 @@
     // Listen for log messages pushed from the service worker
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener('message', function(event) {
-            if (event.data && event.data.type === '__ZSOZSO_SW_LOG') {
+            if (event.data && event.data.type === '__GUN_CONNECT_SW_LOG') {
                 pushSwLine(event.data.text);
             }
         });
@@ -106,7 +106,7 @@
                 + '-' + String(d.getHours()).padStart(2, '0')
                 + String(d.getMinutes()).padStart(2, '0')
                 + String(d.getSeconds()).padStart(2, '0');
-            var filename = 'zsozso-log-' + stamp + '.log';
+            var filename = 'gun-connect-log-' + stamp + '.log';
             var a = document.createElement('a');
             a.href = url;
             a.download = filename;
@@ -121,7 +121,7 @@
     }
 
     // Public API for Rust to read
-    window.__zsozso_log = {
+    window.__gun_connect_log = {
         // Returns all buffered lines as a single newline-separated string.
         // Also triggers a pull from the SW so next read has fresh data.
         get: function() {
@@ -147,11 +147,11 @@
             return saveLogs();
         },
         // Extract the version (CACHE_NAME) from SW log lines.
-        // SW log entries contain the CACHE_NAME string, e.g. "12:34:56.789 zsozso-v2 [SW] ..."
+        // SW log entries contain the CACHE_NAME string, e.g. "12:34:56.789 gun-connect-v2 [SW] ..."
         version: function() {
             // Fallback: check the logs as you do now
             for (var i = buffer.length - 1; i >= 0; i--) { // Check newest first
-                var m = buffer[i].match(/\b(zsozso-v[\w.]+)\b/);
+                var m = buffer[i].match(/\b(gun-connect-v[\w.]+)\b/);
                 if (m) return m[1];
             }
             return 'detecting...'; 

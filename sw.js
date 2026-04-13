@@ -1,6 +1,6 @@
 // Change this two rows! No other change in this file is a need.
 var MESSAGE_PREFIX = 'GUN_CONNECT';
-var __BASE_PREFIX = '/app/';
+var __BASE_PREFIX = '/gun-connect/';
 // The build.sh replaces it with a real APP_VERSION string...
 var APP_VERSION = 'version';
 // Cache version — it is only changes, if a need.
@@ -41,7 +41,7 @@ function _swLogPush(text) {
     // Push to all currently open clients
     self.clients.matchAll({ type: 'window' }).then(function(cls) {
         cls.forEach(function(c) {
-            c.postMessage({ type: '__ZSOZSO_SW_LOG', text: text });
+            c.postMessage({ type: '__GUN_CONNECT_SW_LOG', text: text });
         });
     });
 }

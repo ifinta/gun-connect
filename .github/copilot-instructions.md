@@ -9,11 +9,6 @@ Built with **Dioxus 0.7** (Rust → WASM), runs as a PWA only — no native/desk
 ## Build & Run
 
 ```bash
-# Clone with submodules
-git clone --recurse-submodules git@github.com:ifinta/gun-connect.git
-# Or if already cloned:
-git submodule update --init --recursive
-
 # Dev server with hot-reload
 dx serve --platform web
 
@@ -26,9 +21,9 @@ dx serve --platform web
 
 Prerequisites: `rustup target add wasm32-unknown-unknown` and `cargo install dioxus-cli`.
 
-### Git submodules
+### Shared libraries
 
-`src/db`, `src/ledger`, and `src/store` are **git submodules** — shared libraries across all Iceberg Protocol apps. The `i18n.rs` (Language enum) and JS bridge files live in the app itself, not in the submodules.
+`zsozso-common`, `zsozso-db`, `zsozso-ledger`, and `zsozso-store` are **Cargo git dependencies** — shared libraries across all Iceberg Protocol apps. The `Language` enum lives in `zsozso-common`. JS bridge files live in the app itself.
 
 No tests exist. No linter beyond `cargo check`.
 
@@ -48,13 +43,14 @@ This app has **2 tabs**:
 
 ## Architecture
 
-### Shared libraries (git submodules)
+### Shared libraries (Cargo git dependencies)
 
 | Library | Purpose |
 |---------|---------|
-| `db` | GUN.js decentralized database (Db, Sea, NetworkGraph traits) |
-| `ledger` | Stellar blockchain (Ledger, Cyf, SmartContract traits) |
-| `store` | Encrypted secret persistence (Store trait, passkey, IndexedDB) |
+| `zsozso-common` | Language enum, i18n trait definitions |
+| `zsozso-db` | GUN.js decentralized database (Db, Sea, NetworkGraph traits) |
+| `zsozso-ledger` | Stellar blockchain (Ledger, Cyf, SmartContract traits) |
+| `zsozso-store` | Encrypted secret persistence (Store trait, passkey, IndexedDB) |
 
 ### Key focus: GUN relay connectivity
 
@@ -67,10 +63,6 @@ This app's primary purpose is managing the GUN relay connection:
 ### Module layout
 
 - **`src/ui/`** — Dioxus components, state, controller, tabs
-- **`src/ledger/`** — (from submodule) Blockchain abstraction
-- **`src/store/`** — (from submodule) Secret persistence
-- **`src/db/`** — (from submodule) Decentralized database
-- **`src/i18n.rs`** — `Language` enum
 - **`src/sss.rs`** — Shamir's Secret Sharing
 
 ### JS Bridges
@@ -80,7 +72,7 @@ This app's primary purpose is managing the GUN relay connection:
 | `__gun_bridge` | `gun_bridge.js` | `db::gundb` |
 | `__sea_bridge` | `sea_bridge.js` | `db::gundb::sea` |
 | `__passkey_bridge` | `passkey_bridge.js` | `store::passkey` |
-| `__zsozso_log` | `log_bridge.js` | (for remote log upload) |
+| `__gun_connect_log` | `log_bridge.js` | (for remote log upload) |
 
 ## Key Controller Methods (relevant to this app)
 
@@ -119,7 +111,7 @@ Method naming: `btn_*()` for buttons, `lbl_*()` for labels, `fmt_*()` for format
 
 ### Service worker & deployment
 
-`build.sh` stamps date+commit CACHE_NAME. SW uses `skipWaiting()` + `clients.claim()`. App served under `/app/` (base_path in Dioxus.toml).
+`build.sh` stamps date+commit CACHE_NAME. SW uses `skipWaiting()` + `clients.claim()`. App served under `/gun-connect/` (base_path in Dioxus.toml).
 
 ## Ecosystem
 

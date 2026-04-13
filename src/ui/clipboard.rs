@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 /// Copy text to clipboard using navigator.clipboard API.
 pub fn copy_to_clipboard(text: &str) {
     let text = text.to_string();
-    let _ = js_sys::eval("window.__zsozso_clipboard_dirty = true");
+    let _ = js_sys::eval("window.__gun_connect_clipboard_dirty = true");
     spawn(async move {
         write_to_web_clipboard(&text).await;
     });
@@ -11,7 +11,7 @@ pub fn copy_to_clipboard(text: &str) {
 
 /// Clear the clipboard content.
 pub fn clear_clipboard() {
-    let _ = js_sys::eval("window.__zsozso_clipboard_dirty = false");
+    let _ = js_sys::eval("window.__gun_connect_clipboard_dirty = false");
     spawn(async move {
         write_to_web_clipboard("").await;
     });
@@ -32,12 +32,12 @@ async fn write_to_web_clipboard(text: &str) -> bool {
 /// Only clears when the dirty flag is set (i.e., something was copied).
 pub fn register_beforeunload_cleanup() {
     let _ = js_sys::eval(r#"
-        if (!window.__zsozso_unload_registered) {
-            window.__zsozso_clipboard_dirty = false;
-            window.__zsozso_unload_registered = true;
-            function __zsozso_clear_clipboard() {
-                if (!window.__zsozso_clipboard_dirty) return;
-                window.__zsozso_clipboard_dirty = false;
+        if (!window.__gun_connect_unload_registered) {
+            window.__gun_connect_clipboard_dirty = false;
+            window.__gun_connect_unload_registered = true;
+            function __gun_connect_clear_clipboard() {
+                if (!window.__gun_connect_clipboard_dirty) return;
+                window.__gun_connect_clipboard_dirty = false;
                 // Use a copy event handler to synchronously override clipboard data.
                 // This is the only reliable way to clear the clipboard during page unload.
                 var copyHandler = function(e) {
@@ -57,8 +57,8 @@ pub fn register_beforeunload_cleanup() {
                 } catch(e) {}
                 document.removeEventListener('copy', copyHandler, true);
             }
-            window.addEventListener('beforeunload', __zsozso_clear_clipboard);
-            window.addEventListener('pagehide', __zsozso_clear_clipboard);
+            window.addEventListener('beforeunload', __gun_connect_clear_clipboard);
+            window.addEventListener('pagehide', __gun_connect_clear_clipboard);
         }
     "#);
 }

@@ -4,6 +4,6 @@
 # A public könyvtárat az index.html-lel együtt szintén ide rakja.
 
 [web.app]
-# Az /app/ prefix kell, mert a szerveren https://zsozso.info/app/ alatt fut.
-# Enélkül a generált <script> tag /./assets/... lenne /app/assets/... helyett.
-base_path = "app"
+# Az /gun-connect/ prefix kell, mert a szerveren https://zsozso.info/gun-connect/ alatt fut.
+# Enélkül a generált <script> tag /./assets/... lenne /gun-connect/assets/... helyett.
+base_path = "gun-connect"

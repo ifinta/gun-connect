@@ -3,13 +3,13 @@
 #
 # Pipeline:
 #   1. Run `dx build --release --platform web --features web`
-#   2. Stage output into dist/app/ (preserves manually-added files like gun.js)
-#   3. Stamp a fresh APP_VERSION into dist/app/sw.js and dist/app/index.html
+#   2. Stage output into dist/gun-connect/ (preserves manually-added files like gun.js)
+#   3. Stamp a fresh APP_VERSION into dist/gun-connect/sw.js and dist/gun-connect/index.html
 #   4. Run bundle.js to create the deployment in deploy/<prefix>/
 #
 # Usage:
-#   ./build.sh          — build + bundle for live server (https://zsozso.info/app)
-#   ./build.sh -ghpages — build + bundle for GitHub Pages (/zsozso-dioxus/)
+#   ./build.sh          — build + bundle for live server (https://zsozso.info/gun-connect)
+#   ./build.sh -ghpages — build + bundle for GitHub Pages (/gun-connect-dioxus/)
 #   ./build.sh --dry    — print the new APP_VERSION without building
 
 set -euo pipefail
@@ -28,12 +28,12 @@ BUILD_TS="$(date +%Y%m%d-%H%M)"
 GIT_HASH="$(git rev-parse --short=8 HEAD)"
 
 APP_NAME="gun-connect"
-# Deployment prefix: /app/ for live server, /zsozso-dioxus/ for GitHub Pages
+# Deployment prefix: /gun-connect/ for live server, /gun-connect-dioxus/ for GitHub Pages
 if $GHPAGES; then
-  PREFIX="zsozso-dioxus"
+  PREFIX="gun-connect-dioxus"
   APP_VERSION="${APP_NAME}-gh-${BUILD_TS}-${GIT_HASH}"
 else
-  PREFIX="app"
+  PREFIX="gun-connect"
   APP_VERSION="${APP_NAME}-app-${BUILD_TS}-${GIT_HASH}"
 fi
 
@@ -75,14 +75,14 @@ sed -i "s|window.__APP_VERSION = '.*'|window.__APP_VERSION = '${APP_VERSION}'|" 
 echo "Stamped ${DIST_DIR}/index.html"
 
 # ── 5. Bundle for deployment ─────────────────────────────────────────────────
-# For GitHub Pages builds, patch manifest.json paths and index.html to match the /zsozso-dioxus/ prefix
+# For GitHub Pages builds, patch manifest.json paths and index.html to match the /gun-connect-dioxus/ prefix
 if $GHPAGES; then
-  sed -i 's|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '/zsozso-dioxus/';|g' "${DIST_DIR}/sw.js"
-  sed -i 's|.*let PREFIX =.*|        let PREFIX = "zsozso-dioxus";|g' "${DIST_DIR}/index.html"
-  sed -i 's|.*"id":.*|    "id": "/zsozso-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  sed -i 's|.*"start-url":.*|    "start_url": "/zsozso-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  sed -i 's|.*"scope":.*|    "scupe": "/zsozso-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  echo "Patched manifest.json and index.html for -ghpages (GitHub Pages) deployment (/zsozso-dioxus/)"
+  sed -i 's|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '/gun-connect-dioxus/';|g' "${DIST_DIR}/sw.js"
+  sed -i 's|.*let PREFIX =.*|        let PREFIX = "gun-connect-dioxus";|g' "${DIST_DIR}/index.html"
+  sed -i 's|.*"id":.*|    "id": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
+  sed -i 's|.*"start_url":.*|    "start_url": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
+  sed -i 's|.*"scope":.*|    "scope": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
+  echo "Patched manifest.json and index.html for -ghpages (GitHub Pages) deployment (/gun-connect-dioxus/)"
 fi
 
 echo "Running: node bundle.js ${DIST_DIR} deploy ${PREFIX}"
