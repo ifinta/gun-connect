@@ -11,7 +11,7 @@
 (function () {
     "use strict";
 
-    const DB_NAME = "GunConnectPasskey";
+    const DB_NAME = "ZsozsoPasskey";
     const STORE_NAME = "credentials";
 
     // Fixed PRF salt (deterministic key derivation per credential)
@@ -69,11 +69,11 @@
         var credential = await navigator.credentials.create({
             publicKey: {
                 challenge: challenge,
-                rp: { name: "Gun Connect", id: location.hostname },
+                rp: { name: "Zsozso Wallet", id: location.hostname },
                 user: {
                     id: crypto.getRandomValues(new Uint8Array(16)),
-                    name: "gun-connect-user",
-                    displayName: "Gun Connect User",
+                    name: "zsozso-user",
+                    displayName: "Zsozso Wallet User",
                 },
                 pubKeyCredParams: [
                     { alg: -7, type: "public-key" },    // ES256
