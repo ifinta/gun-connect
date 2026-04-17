@@ -9,7 +9,7 @@
 #
 # Usage:
 #   ./build.sh          — build + bundle for live server (https://zsozso.info/gun-connect)
-#   ./build.sh -ghpages — build + bundle for GitHub Pages (/gun-connect-dioxus/)
+#   ./build.sh -ghpages — build + bundle for GitHub Pages (/gun-connect/)
 #   ./build.sh --dry    — print the new APP_VERSION without building
 
 set -euo pipefail
@@ -30,7 +30,7 @@ GIT_HASH="$(git rev-parse --short=8 HEAD)"
 APP_NAME="gun-connect"
 # Deployment prefix: /gun-connect/ for live server, /gun-connect-dioxus/ for GitHub Pages
 if $GHPAGES; then
-  PREFIX="gun-connect-dioxus"
+  PREFIX="gun-connect"
   APP_VERSION="${APP_NAME}-gh-${BUILD_TS}-${GIT_HASH}"
 else
   PREFIX="gun-connect"
@@ -41,7 +41,11 @@ echo "APP_VERSION → ${APP_VERSION}"
 $DRY && exit 0
 
 # ── Sync JS bridge files from library repos ───────────────────────────────────
-./sync-bridges.sh
+if [ -z "${CI:-}" ]; then
+  ./sync-bridges.sh
+else
+  echo "CI detected — skipping sync-bridges.sh (bridge files already in repo)"
+fi
 
 # For different builds, patch Dioxus.toml paths to match the right prefix
 sed -i "s|.*base_path =.*|base_path = \"${PREFIX}\"|g" Dioxus.toml
@@ -77,12 +81,12 @@ echo "Stamped ${DIST_DIR}/index.html"
 # ── 5. Bundle for deployment ─────────────────────────────────────────────────
 # For GitHub Pages builds, patch manifest.json paths and index.html to match the /gun-connect-dioxus/ prefix
 if $GHPAGES; then
-  sed -i 's|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '/gun-connect-dioxus/';|g' "${DIST_DIR}/sw.js"
-  sed -i 's|.*let PREFIX =.*|        let PREFIX = "gun-connect-dioxus";|g' "${DIST_DIR}/index.html"
-  sed -i 's|.*"id":.*|    "id": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  sed -i 's|.*"start_url":.*|    "start_url": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  sed -i 's|.*"scope":.*|    "scope": "/gun-connect-dioxus/",|g' "${DIST_DIR}/manifest.json"
-  echo "Patched manifest.json and index.html for -ghpages (GitHub Pages) deployment (/gun-connect-dioxus/)"
+  sed -i 's|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '"'"'/gun-connect/'"'"';|g' "${DIST_DIR}/sw.js"
+  sed -i 's|.*let PREFIX =.*|        let PREFIX = "gun-connect";|g' "${DIST_DIR}/index.html"
+  sed -i 's|.*"id":.*|    "id": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
+  sed -i 's|.*"start_url":.*|    "start_url": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
+  sed -i 's|.*"scope":.*|    "scope": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
+  echo "Patched manifest.json and index.html for -ghpages (GitHub Pages) deployment (/gun-connect/)"
 fi
 
 echo "Running: node bundle.js ${DIST_DIR} deploy ${PREFIX}"
