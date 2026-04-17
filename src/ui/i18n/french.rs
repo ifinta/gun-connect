@@ -38,4 +38,6 @@ impl UiI18n for FrenchUi {
     fn relay_discovering(&self) -> &'static str { "Recherche..." }
     fn btn_connect_relay(&self) -> &'static str { "Connecter" }
     fn btn_remove_relay(&self) -> &'static str { "Supprimer" }
+    fn btn_forget_relay(&self) -> &'static str { "Oublier" }
+    fn btn_stop_search(&self) -> &'static str { "Arrêter" }
 }

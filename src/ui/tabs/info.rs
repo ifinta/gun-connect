@@ -10,6 +10,8 @@ pub fn render_info_tab(s: WalletState, ctrl: AppController, i18n: &dyn UiI18n) -
     let connected = s.connected_relays.read().clone();
     let discovered = s.discovered_relays.read().clone();
     let discovering = *s.discovering_relays.read();
+    let discover_hint = s.discover_status.read().clone();
+    let discover_progress = s.discover_progress.read().clone();
     let at_limit = connected.len() >= MAX_RELAYS;
 
     rsx! {
@@ -88,14 +90,33 @@ pub fn render_info_tab(s: WalletState, ctrl: AppController, i18n: &dyn UiI18n) -
 
         // ── Find Relays ─────────────────────────────────────────────
         div { style: "margin-top: 16px;",
-            button {
-                style: "width: 100%; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.95em;",
-                disabled: discovering,
-                onclick: move |_| ctrl.discover_relays_action(),
+            div { style: "display: flex; gap: 8px;",
+                button {
+                    style: "flex: 1; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.95em;",
+                    disabled: discovering,
+                    onclick: move |_| ctrl.discover_relays_action(),
+                    if discovering {
+                        "{i18n.relay_discovering()}"
+                    } else {
+                        "{i18n.btn_find_relays()}"
+                    }
+                }
                 if discovering {
-                    "{i18n.relay_discovering()}"
-                } else {
-                    "{i18n.btn_find_relays()}"
+                    button {
+                        style: "padding: 12px 20px; background: #dc3545; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.95em;",
+                        onclick: move |_| ctrl.stop_discover_relays(),
+                        "{i18n.btn_stop_search()}"
+                    }
+                }
+            }
+            if !discover_progress.is_empty() {
+                p { style: "text-align: center; font-size: 0.8em; color: #17a2b8; font-family: monospace; margin-top: 6px;",
+                    "{discover_progress}"
+                }
+            }
+            if !discover_hint.is_empty() {
+                p { style: "text-align: center; font-size: 0.8em; color: #495057; font-style: italic; margin-top: 4px;",
+                    "{discover_hint}"
                 }
             }
         }

@@ -38,4 +38,6 @@ impl UiI18n for GermanUi {
     fn relay_discovering(&self) -> &'static str { "Suche..." }
     fn btn_connect_relay(&self) -> &'static str { "Verbinden" }
     fn btn_remove_relay(&self) -> &'static str { "Entfernen" }
+    fn btn_forget_relay(&self) -> &'static str { "Vergessen" }
+    fn btn_stop_search(&self) -> &'static str { "Stopp" }
 }

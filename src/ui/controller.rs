@@ -209,35 +209,66 @@ impl AppController {
     pub fn discover_relays_action(&self) {
         let mut relays_signal = self.s.discovered_relays;
         let mut discovering = self.s.discovering_relays;
+        let mut status = self.s.discover_status;
         let connected = self.s.connected_relays;
         let own_address = self.s.testnet_public_key.read().clone();
+        let mut progress = self.s.discover_progress;
+        let mut stop = self.s.discover_stop;
+
+        log(&format!("[discover_relays_action] Starting. Own testnet address: {:?}", own_address));
+
+        if own_address.is_none() {
+            log("[discover_relays_action] No testnet key — cannot discover relays");
+            status.set("⚠ No testnet key — generate or import one in Settings first".into());
+            return;
+        }
 
         discovering.set(true);
+        stop.set(false);
+        status.set(String::new());
+        progress.set(String::new());
         relays_signal.set(vec![]);
 
         spawn(async move {
             let connected_urls: std::collections::HashSet<String> =
                 connected.read().iter().map(|r| r.url.clone()).collect();
+            log(&format!("[discover_relays_action] Excluding {} connected URLs", connected_urls.len()));
 
             // Build known accounts list: our own address + previously discovered
             let mut known = read_known_accounts();
+            log(&format!("[discover_relays_action] {} known accounts from localStorage", known.len()));
             if let Some(ref addr) = own_address {
                 if !known.contains(addr) {
+                    log(&format!("[discover_relays_action] Adding own address to known: {}", addr));
                     known.push(addr.clone());
                 }
             }
 
-            let (relays, updated_accounts) = discover_relays(&connected_urls, &known).await;
+            let (relays, updated_accounts) = discover_relays(&connected_urls, &known, progress, stop).await;
 
             // Persist the updated known accounts list
             write_known_accounts(&updated_accounts);
+            log(&format!("[discover_relays_action] Found {} relays, persisted {} known accounts. Checking connectivity...",
+                relays.len(), updated_accounts.len()));
 
-            log(&format!("[discover_relays_action] Found {} relays, checking connectivity...", relays.len()));
+            if relays.is_empty() {
+                status.set("✅ No new relays found on Stellar testnet".into());
+                progress.set(String::new());
+                discovering.set(false);
+                log("[discover_relays_action] No relays found, done");
+                return;
+            }
 
+            status.set(format!("✅ Found {} relay(s) — checking connectivity...", relays.len()));
+            progress.set(String::new());
             relays_signal.set(relays.clone());
 
+            let mut reachable_count = 0usize;
             for (i, relay) in relays.iter().enumerate() {
+                log(&format!("[discover_relays_action] Checking relay {}/{}: {}", i + 1, relays.len(), relay.url));
                 let ok = GunDb::check_relay(&relay.url, 4000).await.unwrap_or(false);
+                log(&format!("[discover_relays_action] Relay {} ({}) => reachable={}", i + 1, relay.url, ok));
+                if ok { reachable_count += 1; }
                 let mut current = relays_signal.read().clone();
                 if let Some(r) = current.get_mut(i) {
                     r.reachable = Some(ok);
@@ -245,8 +276,17 @@ impl AppController {
                 relays_signal.set(current);
             }
 
+            status.set(format!("✅ {} relay(s) found, {} reachable", relays.len(), reachable_count));
             discovering.set(false);
+            log("[discover_relays_action] Discovery complete");
         });
+    }
+
+    /// Stop an in-progress relay discovery scan.
+    pub fn stop_discover_relays(&self) {
+        log("[stop_discover_relays] User requested stop");
+        let mut stop = self.s.discover_stop;
+        stop.set(true);
     }
 
     // ── Dual-key methods ───────────────────────────────────────────────

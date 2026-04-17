@@ -38,4 +38,6 @@ impl UiI18n for HungarianUi {
     fn relay_discovering(&self) -> &'static str { "Keresés..." }
     fn btn_connect_relay(&self) -> &'static str { "Csatlakozás" }
     fn btn_remove_relay(&self) -> &'static str { "Eltávolítás" }
+    fn btn_forget_relay(&self) -> &'static str { "Elfelejtés" }
+    fn btn_stop_search(&self) -> &'static str { "Leállítás" }
 }

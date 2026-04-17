@@ -56,6 +56,12 @@ pub struct WalletState {
     pub discovered_relays: Signal<Vec<DiscoveredRelay>>,
     /// Whether relay discovery is in progress.
     pub discovering_relays: Signal<bool>,
+    /// Status hint for relay discovery (shown below Find Relays button).
+    pub discover_status: Signal<String>,
+    /// Set to true to signal the discovery scan to stop early.
+    pub discover_stop: Signal<bool>,
+    /// Progress text for relay discovery.
+    pub discover_progress: Signal<String>,
     /// Stored mainnet public key.
     pub mainnet_public_key: Signal<Option<String>>,
     /// Stored testnet public key.
@@ -93,6 +99,9 @@ pub fn use_wallet_state() -> WalletState {
         connected_relays: use_signal(Vec::new),
         discovered_relays: use_signal(Vec::new),
         discovering_relays: use_signal(|| false),
+        discover_status: use_signal(String::new),
+        discover_stop: use_signal(|| false),
+        discover_progress: use_signal(String::new),
         mainnet_public_key: use_signal(|| None),
         testnet_public_key: use_signal(|| None),
         mainnet_secret_key: use_signal(|| None),

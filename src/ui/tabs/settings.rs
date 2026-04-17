@@ -128,6 +128,39 @@ pub fn render_settings_tab(s: WalletState, ctrl: AppController, i18n: &dyn UiI18
             }
         }
         p { style: "font-size: 0.7em; color: #888; margin: 2px 0 20px 0;", "{i18n.lbl_gun_relay_url()}" }
+
+        // ── Connected Relays list ───────────────────────────────────
+        {
+            let connected = s.connected_relays.read().clone();
+            rsx! {
+                if !connected.is_empty() {
+                    div { style: "margin-bottom: 16px;",
+                        p { style: "font-weight: bold; font-size: 0.85em; color: #333; margin: 0 0 6px 0;",
+                            "{i18n.lbl_relay_status()}"
+                        }
+                        for entry in connected.iter() {
+                            {
+                                let url_for_forget = entry.url.clone();
+                                rsx! {
+                                    div { style: "display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 4px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                        p { style: "flex: 1; margin: 0; font-family: monospace; font-size: 0.78em; color: #333; word-break: break-all;",
+                                            "{entry.url}"
+                                        }
+                                        button {
+                                            style: "padding: 4px 10px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 0.75em; cursor: pointer; white-space: nowrap;",
+                                            onclick: move |_| {
+                                                ctrl.remove_relay_action(url_for_forget.clone());
+                                            },
+                                            "{i18n.btn_forget_relay()}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

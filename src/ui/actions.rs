@@ -1,3 +1,4 @@
+use dioxus::prelude::*;
 use zsozso_common::Language;
 use zsozso_ledger::{Ledger, NetworkEnvironment, StellarLedger};
 
@@ -212,29 +213,220 @@ pub struct DiscoveredRelay {
 
 /// Discover GUN relay URLs published on the Stellar testnet.
 ///
-/// Two-phase strategy:
+/// Three-phase strategy:
 /// 1. Query known accounts directly (`/accounts/{addr}`) for current relay data entries.
-///    This is reliable — data entries are account state, not lost in the operations stream.
-/// 2. Scan recent global manage_data operations to discover NEW accounts.
-///    Newly found accounts are added to the known list for future direct queries.
+/// 2. Scan recent transactions backwards, decode envelope XDR to find ManageData ops
+///    with key `NN_gun_connect_relay`, then collect the source accounts.
+/// 3. Fetch data entries from newly discovered accounts.
 ///
 /// Results are deduplicated by URL, excluding already-connected relays.
+///
+/// `progress` — updated with human-readable scan status after each page.
+/// `stop`     — checked after each page; if true, scan aborts early.
+/// Maximum: 1 000 000 transactions (5000 pages × 200).
 pub async fn discover_relays(
     exclude: &std::collections::HashSet<String>,
     known_accounts: &[String],
+    mut progress: Signal<String>,
+    stop: Signal<bool>,
 ) -> (Vec<DiscoveredRelay>, Vec<String>) {
+    use stellar_xdr::curr::{TransactionEnvelope, ReadXdr, OperationBody, Limits};
+
     let horizon = horizon_url(NetworkEnvironment::Test);
     let client = reqwest::Client::new();
 
+    const MAX_TRANSACTIONS: usize = 1_000_000;
+    const PAGE_SIZE: usize = 200;
+    const MAX_PAGES: usize = MAX_TRANSACTIONS / PAGE_SIZE; // 5000
+
     let mut seen_urls = std::collections::HashSet::<String>::new();
     let mut relays = Vec::new();
-    let mut phase1_total_found: usize = 0;
     let mut all_accounts = std::collections::HashSet::<String>::new();
     for a in known_accounts { all_accounts.insert(a.clone()); }
 
+    log(&format!("[discover_relays] Starting discovery. Excluding {} connected URLs, {} known accounts",
+        exclude.len(), known_accounts.len()));
+
+    let mut phase1_total_found: usize = 0;
+
     // ── Phase 1: Query known accounts directly ──────────────────────
-    log(&format!("[discover_relays] Querying {} known accounts...", known_accounts.len()));
+    log(&format!("[discover_relays] Phase 1: querying {} known accounts...", known_accounts.len()));
     for account in known_accounts {
+        log(&format!("[discover_relays] Phase 1: fetching account {}", account));
+        let url = format!("{}/accounts/{}", horizon, account);
+        let resp = match client.get(&url).send().await {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                log(&format!("[discover_relays] Phase 1: account {} returned status {}", account, r.status()));
+                continue;
+            }
+            Err(e) => {
+                log(&format!("[discover_relays] Phase 1: account {} fetch error: {}", account, e));
+                continue;
+            }
+        };
+        let body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                log(&format!("[discover_relays] Phase 1: account {} JSON parse error: {}", account, e));
+                continue;
+            }
+        };
+        if let Some(data) = body.get("data").and_then(|d| d.as_object()) {
+            log(&format!("[discover_relays] Phase 1: account {} has {} data entries", account, data.len()));
+            for (key, val) in data {
+                if !is_relay_key(key) {
+                    continue;
+                }
+                if let Some(relay_url) = decode_data_entry(val) {
+                    phase1_total_found += 1;
+                    if exclude.contains(&relay_url) {
+                        log(&format!("[discover_relays] Phase 1: {} (already connected)", relay_url));
+                    } else if seen_urls.insert(relay_url.clone()) {
+                        log(&format!("[discover_relays] Phase 1: found relay URL: {}", relay_url));
+                        relays.push(DiscoveredRelay { url: relay_url, reachable: None });
+                    }
+                }
+            }
+        }
+    }
+    log(&format!("[discover_relays] Phase 1 complete: {} relays ({} new) from known accounts", phase1_total_found, relays.len()));
+    let _phase1_relay_count = relays.len();
+    if phase1_total_found > 0 {
+        progress.set(format!("{} relay(s) from known accounts — scanning for more...", phase1_total_found));
+    }
+
+    // ── Phase 2: Scan transactions backwards, decode XDR ────────────
+    log("[discover_relays] Phase 2: scanning transactions backwards (XDR decode)...");
+    let mut txn_url = format!(
+        "{}/transactions?order=desc&limit={}",
+        horizon, PAGE_SIZE
+    );
+
+    let mut total_scanned: usize = 0;
+    let mut new_relay_accounts: Vec<String> = Vec::new();
+
+    for page in 0..MAX_PAGES {
+        // Check stop signal
+        if *stop.read() {
+            log(&format!("[discover_relays] Phase 2: STOPPED by user at page {}, {} txns scanned", page, total_scanned));
+            progress.set(format!("Stopped — {} relay(s) found, {} new account(s) from {} txns",
+                phase1_total_found, new_relay_accounts.len(), total_scanned));
+            break;
+        }
+
+        let resp = match client.get(&txn_url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                log(&format!("[discover_relays] Phase 2: Horizon error on page {}: {}", page, e));
+                break;
+            }
+        };
+        let body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                log(&format!("[discover_relays] Phase 2: JSON parse error on page {}: {}", page, e));
+                break;
+            }
+        };
+        let records = match body.pointer("/_embedded/records").and_then(|r| r.as_array()) {
+            Some(r) => r.clone(),
+            None => {
+                log(&format!("[discover_relays] Phase 2: no records on page {}", page));
+                break;
+            }
+        };
+        let count = records.len();
+        total_scanned += count;
+
+        progress.set(format!(
+            "{} relay(s) found — scanning... {} txns, {} new account(s)",
+            phase1_total_found + new_relay_accounts.len(), total_scanned, new_relay_accounts.len()
+        ));
+
+        for record in &records {
+            let envelope_b64 = match record.get("envelope_xdr").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            let source_account_str = match record.get("source_account").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // Decode XDR
+            let envelope = match TransactionEnvelope::from_xdr_base64(envelope_b64, Limits::none()) {
+                Ok(env) => env,
+                Err(_) => continue,
+            };
+
+            // Extract operations from the envelope
+            let ops = match &envelope {
+                TransactionEnvelope::TxV0(e) => e.tx.operations.as_slice(),
+                TransactionEnvelope::Tx(e) => e.tx.operations.as_slice(),
+                _ => continue,
+            };
+
+            let mut found_manage_data = false;
+            for op in ops {
+                if let OperationBody::ManageData(md) = &op.body {
+                    let name = md.data_name.to_string();
+                    if is_relay_key(&name) {
+                        found_manage_data = true;
+                        break;
+                    }
+                }
+            }
+
+            if found_manage_data && all_accounts.insert(source_account_str.to_string()) {
+                log(&format!("[discover_relays] Phase 2: discovered NEW relay account: {}", source_account_str));
+                new_relay_accounts.push(source_account_str.to_string());
+
+                progress.set(format!(
+                    "{} relay(s) found — scanning... {} txns, {} new account(s)",
+                    phase1_total_found + new_relay_accounts.len(), total_scanned, new_relay_accounts.len()
+                ));
+            }
+        }
+
+        if count < PAGE_SIZE {
+            log(&format!("[discover_relays] Phase 2: last page (only {} records)", count));
+            break;
+        }
+
+        // Auto-stop if we found enough accounts (50)
+        if new_relay_accounts.len() >= 50 {
+            log(&format!("[discover_relays] Phase 2: reached 50 accounts, stopping"));
+            progress.set(format!(
+                "{} relay(s) found — {} new account(s), limit reached",
+                phase1_total_found + new_relay_accounts.len(), new_relay_accounts.len()
+            ));
+            break;
+        }
+
+        // Next page
+        match body.pointer("/_links/next/href").and_then(|v| v.as_str()) {
+            Some(next) => txn_url = next.to_string(),
+            None => break,
+        }
+
+        if page % 50 == 49 {
+            log(&format!("[discover_relays] Phase 2: page {}, {} txns scanned, {} accounts found",
+                page + 1, total_scanned, new_relay_accounts.len()));
+        }
+    }
+
+    log(&format!("[discover_relays] Phase 2 complete: scanned {} txns, found {} new accounts",
+        total_scanned, new_relay_accounts.len()));
+
+    // ── Phase 3: Fetch data entries from newly discovered accounts ───
+    // Always run Phase 3, even if the user pressed STOP during scanning —
+    // the discovered accounts are valuable and must be queried.
+    for (idx, account) in new_relay_accounts.iter().enumerate() {
+        progress.set(format!(
+            "Fetching relay data from account {}/{}...",
+            idx + 1, new_relay_accounts.len()
+        ));
         let url = format!("{}/accounts/{}", horizon, account);
         let resp = match client.get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
@@ -244,138 +436,44 @@ pub async fn discover_relays(
             Ok(v) => v,
             Err(_) => continue,
         };
-        // The `data` field is an object: { "00_gun_connect_relay": "base64...", ... }
         if let Some(data) = body.get("data").and_then(|d| d.as_object()) {
             for (key, val) in data {
                 if !is_relay_key(key) {
                     continue;
                 }
-                let b64 = match val.as_str() {
-                    Some(v) => v,
-                    None => continue,
-                };
-                let url_bytes = match base64::Engine::decode(
-                    &base64::engine::general_purpose::STANDARD, b64
-                ) {
-                    Ok(b) => b,
-                    Err(_) => continue,
-                };
-                let relay_url = match String::from_utf8(url_bytes) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-                phase1_total_found += 1;
-                if !exclude.contains(&relay_url) && seen_urls.insert(relay_url.clone()) {
-                    relays.push(DiscoveredRelay {
-                        url: relay_url,
-                        reachable: None,
-                    });
-                }
-            }
-        }
-    }
-    log(&format!("[discover_relays] Phase 1: {} relays from known accounts ({} new)", phase1_total_found, relays.len()));
-
-    // ── Phase 2: Scan global operations to discover new accounts ────
-    log("[discover_relays] Scanning global operations for new accounts...");
-    let mut ops_url = format!(
-        "{}/operations?type=manage_data&order=desc&limit=200",
-        horizon
-    );
-
-    for page in 0..3 {
-        log(&format!("[discover_relays] Fetching page {} ...", page));
-        let resp = match client.get(&ops_url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                log(&format!("[discover_relays] Horizon error: {}", e));
-                break;
-            }
-        };
-        let body: serde_json::Value = match resp.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                log(&format!("[discover_relays] JSON parse error: {}", e));
-                break;
-            }
-        };
-        let records = match body.pointer("/_embedded/records").and_then(|r| r.as_array()) {
-            Some(r) => r.clone(),
-            None => break,
-        };
-        let count = records.len();
-
-        for record in &records {
-            let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            if !is_relay_key(name) {
-                continue;
-            }
-            let account = match record.get("source_account").and_then(|v| v.as_str()) {
-                Some(a) => a.to_string(),
-                None => continue,
-            };
-
-            // If this is a new account we haven't queried yet, fetch its data
-            if all_accounts.insert(account.clone()) {
-                let acct_url = format!("{}/accounts/{}", horizon, account);
-                let acct_resp = match client.get(&acct_url).send().await {
-                    Ok(r) if r.status().is_success() => r,
-                    _ => continue,
-                };
-                let acct_body: serde_json::Value = match acct_resp.json().await {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                if let Some(data) = acct_body.get("data").and_then(|d| d.as_object()) {
-                    for (key, val) in data {
-                        if !is_relay_key(key) {
-                            continue;
-                        }
-                        let b64 = match val.as_str() {
-                            Some(v) => v,
-                            None => continue,
-                        };
-                        let url_bytes = match base64::Engine::decode(
-                            &base64::engine::general_purpose::STANDARD, b64
-                        ) {
-                            Ok(b) => b,
-                            Err(_) => continue,
-                        };
-                        let relay_url = match String::from_utf8(url_bytes) {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
-                        if !exclude.contains(&relay_url) && seen_urls.insert(relay_url.clone()) {
-                            relays.push(DiscoveredRelay {
-                                url: relay_url,
-                                reachable: None,
-                            });
-                        }
+                if let Some(relay_url) = decode_data_entry(val) {
+                    log(&format!("[discover_relays] Phase 3: found relay URL: {} from account {}", relay_url, account));
+                    if !exclude.contains(&relay_url) && seen_urls.insert(relay_url.clone()) {
+                        relays.push(DiscoveredRelay { url: relay_url, reachable: None });
                     }
                 }
             }
         }
-
-        if count < 200 { break; }
-        match body.pointer("/_links/next/href").and_then(|v| v.as_str()) {
-            Some(next) => ops_url = next.to_string(),
-            None => break,
-        }
     }
 
-    log(&format!("[discover_relays] Total unique relays: {}", relays.len()));
+    log(&format!("[discover_relays] Total unique relays discovered: {}", relays.len()));
 
     // If more than 20, pick random 20
     if relays.len() > 20 {
+        log(&format!("[discover_relays] Truncating from {} to 20 random relays", relays.len()));
         use rand::seq::SliceRandom;
         let mut rng = rand::rng();
         relays.shuffle(&mut rng);
         relays.truncate(20);
     }
 
-    // Return discovered relays + the full set of known accounts (for persistence)
     let new_accounts: Vec<String> = all_accounts.into_iter().collect();
+    log(&format!("[discover_relays] Returning {} relays, {} known accounts", relays.len(), new_accounts.len()));
     (relays, new_accounts)
+}
+
+/// Decode a base64-encoded data entry value into a UTF-8 string.
+pub fn decode_data_entry(val: &serde_json::Value) -> Option<String> {
+    let b64 = val.as_str()?;
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD, b64
+    ).ok()?;
+    String::from_utf8(bytes).ok()
 }
 
 pub fn generate_keypair(net_env: NetworkEnvironment, lang: Language) -> (String, String) {
