@@ -4392,7 +4392,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 [[package]]
 name = "zsozso-common"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ifinta/zsozso-common.git#b7f69a4f726cd37ff51c908db5b848d0c608ed99"
+source = "git+ssh://git@github.com/ifinta/zsozso-common.git#4d01bdc8770a841e41986af8caec15551a604f77"
 
 [[package]]
 name = "zsozso-db"
@@ -4411,7 +4411,7 @@ dependencies = [
 [[package]]
 name = "zsozso-ledger"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ifinta/ledger.git#7dbfcbeafe052ae562e6aef25f6e2f1b0cd4527f"
+source = "git+ssh://git@github.com/ifinta/ledger.git#be56f5faea584bcbb4efcf85a6305aa753d3e03c"
 dependencies = [
  "base64",
  "ed25519-dalek",
