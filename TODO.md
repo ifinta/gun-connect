@@ -17,11 +17,11 @@ We follow **manual test-driven development** within an agile workflow:
 
 ## Code Structure Vision
 
-**Current (Phase 1):** 6 PWA apps + 4 shared Rust libraries, all as Cargo git dependencies.
+**Current (Phase 1):** 6 PWA apps + 4 shared Rust libraries, all as Cargo git dependencies. Relay management logic (publish, discover, types, helpers) consolidated into `zsozso-ledger::relay` module — both admin and gun-connect delegate to it.
 
 **Next (Phase 2):** Extract reusable **Dioxus UI components** into shared git libraries. Dioxus follows the React component model — this makes components naturally shareable across apps. Examples: auth gate, settings panel, key management UI, log viewer, tab bar.
 
-**Later (Phase 3):** Add **Soroban smart contract** projects to the ecosystem. Two drafts already exist:
+**Later (Phase 3):** Libraries will be published as open source alongside gun-connect. Add **Soroban smart contract** projects to the ecosystem. Two drafts already exist:
 - `proof-of-zsozso-sc` — a vault SC for ZSOZSO token locking on Stellar Mainnet
 - `zsozso-sc` — a template SC (first working draft, testnet ping/upgrade/admin)
 
@@ -30,7 +30,7 @@ We follow **manual test-driven development** within an agile workflow:
 ## Near-Term Targets
 
 - **LOG:** Every app sends logs to admin. Admin collects, filters, and displays logs from all apps. Concept still being explored — some ideas exist, needs iteration.
-- **GUN relay sharing:** `gun-connect` app manages relay discovery + sharing between apps/users. Some relay functionality was temporarily moved to `admin` (which has a working log tab for debugging). Will be redistributed after iteration.
+- **GUN relay sharing:** `gun-connect` app manages relay discovery + sharing between apps/users. Relay discovery (3-phase XDR scanning) and publishing (ManageData transactions) now live in `zsozso-ledger::relay`. Both admin and gun-connect use thin wrappers that adapt Dioxus Signals to the library's callback interface. The `Ledger` trait now also exposes `horizon_url()` and `network_passphrase()`.
 - **MLM network:** `mlm` and `merlin` apps — build and manage the Antarctica MLM hierarchy. Merlin is the root node.
 - **Biometric sharing:** Understand and handle WebAuthn passkey sharing between PWA apps on the same device. Needs research + iteration to find a good solution.
 
