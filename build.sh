@@ -42,7 +42,7 @@ $DRY && exit 0
 
 # ── Sync JS bridge files from library repos ───────────────────────────────────
 if [ -z "${CI:-}" ]; then
-  ./sync-bridges.sh
+  bash ./sync-bridges.sh
 else
   echo "CI detected — skipping sync-bridges.sh (bridge files already in repo)"
 fi

@@ -8,20 +8,27 @@ const CACHE_NAME = APP_VERSION+'-SW-v0.12';
 
 function _ts() {
     const d = new Date();
-    return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' +
-    String(d.getMilliseconds()).padStart(3, '0');
+    return d.getFullYear()
+        + '-' + String(d.getMonth() + 1).padStart(2, '0')
+        + '-' + String(d.getDate()).padStart(2, '0')
+        + ' ' + String(d.getHours()).padStart(2, '0')
+        + '-' + String(d.getMinutes()).padStart(2, '0')
+        + '-' + String(d.getSeconds()).padStart(2, '0')
+        + '-' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
 const LOG = (...args) => {
     const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
     const entry = _ts() + ' ' + CACHE_NAME + ' [SW] ' + text;
     console.log(`[SW ${CACHE_NAME}]`, ...args);
+    _swLogPush(entry);
 };
 
 const ERR = (...args) => {
     const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
     const entry = _ts() + ' ' + CACHE_NAME + ' [SW ERR] ' + text;
     console.error(`[SW ${CACHE_NAME}]`, ...args);
+    _swLogPush(entry);
 };
 
 LOG('Script evaluated');
@@ -32,8 +39,8 @@ LOG('Cache name:', CACHE_NAME);
 // Mirrors the client-side buffer in log_bridge.js so that SW lifecycle and
 // fetch events are captured even when no client tab is listening.
 
-const __SW_LOG_MAX = 200;
-const __swLogBuffer = [];
+var __SW_LOG_MAX = 1000;
+var __swLogBuffer = [];
 
 function _swLogPush(text) {
     __swLogBuffer.push(text);
@@ -41,26 +48,14 @@ function _swLogPush(text) {
     // Push to all currently open clients
     self.clients.matchAll({ type: 'window' }).then(function(cls) {
         cls.forEach(function(c) {
-            c.postMessage({ type: '__GUN_CONNECT_SW_LOG', text: text });
+            c.postMessage({ type: '__' + MESSAGE_PREFIX + '_SW_LOG', text: text });
         });
     });
 }
 
 // Patch LOG / ERR to also feed the ring buffer
-const _origLOG = LOG;
-const _origERR = ERR;
-
-const LOG2 = function(...args) {
-    _origLOG(...args);
-    var text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    _swLogPush(_ts() + ' ' + CACHE_NAME + ' [SW] ' + text);
-};
-
-const ERR2 = function(...args) {
-    _origERR(...args);
-    var text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    _swLogPush(_ts() + ' ' + CACHE_NAME + ' [SW ERR] ' + text);
-};
+const LOG2 = function(...args) { LOG(...args); };
+const ERR2 = function(...args) { ERR(...args); };
 
 // Re-bind so all subsequent code uses the buffered versions
 // (we can't reassign const LOG/ERR, so we use a message listener instead
