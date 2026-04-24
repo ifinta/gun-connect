@@ -18,6 +18,26 @@ function _ts() {
         + '.' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
+// ── SW-side log ring buffer ──────────────────────────────────────────────────
+// Declared BEFORE LOG/ERR so the top-level LOG('Script evaluated') calls below
+// have a valid buffer to push into. With `var` hoisting, __swLogBuffer would be
+// `undefined` at top-level LOG time, which threw TypeError during SW script
+// evaluation and aborted the worker.
+// Ring size — see log_bridge.template.js for client-side MEMORY_MAX / MAX_DB_ENTRIES.
+var __SW_LOG_MAX = 1000;
+var __swLogBuffer = [];
+
+function _swLogPush(text) {
+    __swLogBuffer.push(text);
+    if (__swLogBuffer.length > __SW_LOG_MAX) __swLogBuffer.shift();
+    // Push to all currently open clients
+    self.clients.matchAll({ type: 'window' }).then(function(cls) {
+        cls.forEach(function(c) {
+            c.postMessage({ type: '__' + MESSAGE_PREFIX + '_SW_LOG', text: text });
+        });
+    });
+}
+
 // Grep-friendly line format: YYYY-MM-DD HH:MM:SS.MMM APP:<app> LL:SW <text>
 const LOG = (...args) => {
     const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
@@ -37,32 +57,9 @@ LOG('Script evaluated');
 LOG('Base prefix:', __BASE_PREFIX);
 LOG('Cache name:', CACHE_NAME);
 
-// ── SW-side log ring buffer ──────────────────────────────────────────────────
-// Mirrors the client-side buffer in log_bridge.js so that SW lifecycle and
-// fetch events are captured even when no client tab is listening.
-
-// Ring size — see log_bridge.template.js for client-side MEMORY_MAX / MAX_DB_ENTRIES.
-var __SW_LOG_MAX = 1000;
-var __swLogBuffer = [];
-
-function _swLogPush(text) {
-    __swLogBuffer.push(text);
-    if (__swLogBuffer.length > __SW_LOG_MAX) __swLogBuffer.shift();
-    // Push to all currently open clients
-    self.clients.matchAll({ type: 'window' }).then(function(cls) {
-        cls.forEach(function(c) {
-            c.postMessage({ type: '__' + MESSAGE_PREFIX + '_SW_LOG', text: text });
-        });
-    });
-}
-
-// Patch LOG / ERR to also feed the ring buffer
+// Legacy aliases (kept for backward compat with earlier handler code).
 const LOG2 = function(...args) { LOG(...args); };
 const ERR2 = function(...args) { ERR(...args); };
-
-// Re-bind so all subsequent code uses the buffered versions
-// (we can't reassign const LOG/ERR, so we use a message listener instead
-//  and call LOG2/ERR2 from the lifecycle/fetch handlers below)
 
 // Handle messages from clients (GET_LOGS, CLEAR_LOGS)
 self.addEventListener('message', function(event) {
