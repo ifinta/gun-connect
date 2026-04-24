@@ -2,6 +2,59 @@
 
 ---
 
+## GitHub Pages deploy — eljárás új app felhúzásához
+
+Minta: `gun-connect`, `admin`, `proof-of-zsozso`. GH Pages URL ugyanaz mint a
+live, csak `ifinta.github.io/<prefix>/` alatt. Prefix ugyanaz mindkettő
+esetén (itt `gun-connect`), kivéve ha az app neve ütközik egy meglévő repo-val
+— pl. `proof-of-zsozso` GH Pages prefixe `proof-of-zsozso-dioxus` a régi
+monolit miatt.
+
+### Lokálisan (egyszer per app)
+
+1. **`build.sh`** — `-ghpages` flag támogatás:
+   - `GHPAGES=false` arg parser, `APP_VERSION` infix `-gh-` vagy `-app-`.
+   - `if [ -z "${CI:-}" ]` guard a `sync-bridges.sh` köré (CI-ben a
+     bridge fájlok már a repo-ban vannak, a sibling repo nincs meg).
+   - `node bundle.js` ELŐTT `if $GHPAGES; then` blokk, sed-del patcheli:
+     - `sw.js` → `var __BASE_PREFIX = '/<prefix>/';`
+     - `index.html` → `let PREFIX = "<prefix>";`
+     - `manifest.json` → `"id"` / `"start_url"` / `"scope"` = `/<prefix>/`
+   - Egyszeres quote-okat `'"'"'` szekvenciával escape-eld (lásd admin).
+2. **`.github/workflows/deploy.yml`** — másolás gun-connect-ből, csak az
+   `upload-pages-artifact` lépés `path:` sorát kell az app deploy mappájára
+   cserélni (`deploy/<prefix>`).
+3. **Commit + push** main ágra.
+
+### GitHub UI (egyszer per repo)
+
+- **Settings → Secrets and variables → Actions**: `CARGO_SSH_KEY`
+  (ugyanaz az SSH private key, amit a többi appnál; deploy key read-only
+  access-szel a privát `zsozso-common` / `-db` / `-ledger` / `-store` repókhoz).
+  Secrets nem oszthatók meg repók között — minden új appban újra kell rakni.
+- **Settings → Pages → Source**: `GitHub Actions` (NEM "Deploy from a branch").
+- (Opcionális) **Settings → Environments → github-pages**: `main`-re szűkített
+  deployment branches.
+
+### Lokális teszt `-ghpages` build-del
+
+```bash
+./build.sh -ghpages
+npx serve deploy/ -l 8080   # → http://localhost:8080/<prefix>/
+```
+
+### Ismert buktatók
+
+- Ha `cargo fetch` "Permission denied (publickey)" hibával bukik → a
+  `CARGO_SSH_KEY` secret hiányzik vagy nincs bekötve minden privát
+  függőség repóba.
+- Ha a deploy job panaszkodik hogy "Pages site not yet created" → a
+  Settings → Pages source még nincs `GitHub Actions`-re állítva.
+- `Dioxus.toml` `base_path` lokálisan módosul a `build.sh` sed-jétől
+  (dirty working tree) — commit előtt visszaállítani.
+
+---
+
 ## LOG rendszer — peer-review pontok (2026-04)
 
 Kanonikus forrás: `../store/log_bridge.template.js` + `../store/sw.template.js`,
