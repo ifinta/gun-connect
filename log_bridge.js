@@ -5,11 +5,19 @@
     const WINDOW_LOG_API = '__gun_connect_log';
     const LOG_FILENAME_PREFIX = 'gun-connect-log-';
 
+    // ── Ring-size config (keep in sync with sw.template.js __SW_LOG_MAX) ──
+    // MEMORY_MAX      — client-side in-memory buffer (fast path for get())
+    // MAX_DB_ENTRIES  — IndexedDB rolling cap (persistent, cross-tab, cross-app same-origin)
+    // SW __SW_LOG_MAX — service-worker in-memory ring (see sw.template.js)
     const MEMORY_MAX = 300;
+    const MAX_DB_ENTRIES = 4000;
     const DB_NAME = 'zsozso_logs';
     const DB_VERSION = 1;
     const STORE = 'entries';
-    const MAX_DB_ENTRIES = 4000;
+
+    // Fixed length of the timestamp prefix produced by ts() (YYYY-MM-DD HH:MM:SS.MMM + trailing space).
+    // Used to strip the timestamp when computing dedup keys for SW lines.
+    const TS_PREFIX_LEN = 24;
 
     const buffer = [];
     const seenSwLines = new Set();
@@ -23,9 +31,9 @@
             + '-' + String(d.getMonth() + 1).padStart(2, '0')
             + '-' + String(d.getDate()).padStart(2, '0')
             + ' ' + String(d.getHours()).padStart(2, '0')
-            + '-' + String(d.getMinutes()).padStart(2, '0')
-            + '-' + String(d.getSeconds()).padStart(2, '0')
-            + '-' + String(d.getMilliseconds()).padStart(3, '0');
+            + ':' + String(d.getMinutes()).padStart(2, '0')
+            + ':' + String(d.getSeconds()).padStart(2, '0')
+            + '.' + String(d.getMilliseconds()).padStart(3, '0');
     }
 
     function toText(args) {
@@ -154,26 +162,31 @@
         }
     }
 
+    // Grep-friendly line format:
+    //   YYYY-MM-DD HH:MM:SS.MMM APP:<app> LL:<level> <text>
+    // e.g. grep 'APP:admin LL:ERR' for all admin errors.
     function append(level, args) {
-        const line = ts() + ' [' + APP_NAME + ' ' + level + '] ' + toText(args);
+        const line = ts() + ' APP:' + APP_NAME + ' LL:' + level + ' ' + toText(args);
         pushMemory(line);
         persistLine(level, line);
     }
 
     function pushSwLine(line) {
-        if (seenSwLines.has(line)) return;
-        seenSwLines.add(line);
+        // Dedup key ignores the timestamp prefix so lines produced once but
+        // observed twice (GET_LOGS pull + streamed postMessage) collapse, even if
+        // they arrive with slightly different timestamps is avoided by using content only.
+        const key = line.length > TS_PREFIX_LEN ? line.substring(TS_PREFIX_LEN) : line;
+        if (seenSwLines.has(key)) return Promise.resolve();
+        seenSwLines.add(key);
         if (seenSwLines.size > MEMORY_MAX * 2) {
-            const keep = new Set();
-            for (const v of seenSwLines) {
-                if (keep.size >= MEMORY_MAX) break;
-                keep.add(v);
-            }
+            // Keep the NEWEST MEMORY_MAX keys (Set iteration is insertion-ordered).
+            const arr = Array.from(seenSwLines);
+            const tail = arr.slice(arr.length - MEMORY_MAX);
             seenSwLines.clear();
-            for (const v of keep) seenSwLines.add(v);
+            for (const v of tail) seenSwLines.add(v);
         }
         pushMemory(line);
-        persistLine('SW', line);
+        return persistLine('SW', line);
     }
 
     const origLog = console.log.bind(console);
@@ -190,16 +203,27 @@
     };
 
     function pullSwLogs() {
-        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
-        try {
-            const ch = new MessageChannel();
-            ch.port1.onmessage = function(e) {
-                if (e.data && Array.isArray(e.data.logs)) {
-                    e.data.logs.forEach(function(line) { pushSwLine(line); });
-                }
-            };
-            navigator.serviceWorker.controller.postMessage({ type: 'GET_LOGS' }, [ch.port2]);
-        } catch (_) {}
+        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+            return Promise.resolve();
+        }
+        return new Promise(function(resolve) {
+            let settled = false;
+            const done = function() { if (!settled) { settled = true; resolve(); } };
+            try {
+                const ch = new MessageChannel();
+                ch.port1.onmessage = function(e) {
+                    if (e.data && Array.isArray(e.data.logs)) {
+                        const pending = e.data.logs.map(function(line) { return pushSwLine(line); });
+                        Promise.all(pending).then(done, done);
+                    } else {
+                        done();
+                    }
+                };
+                navigator.serviceWorker.controller.postMessage({ type: 'GET_LOGS' }, [ch.port2]);
+                // Safety: if SW never answers, don't hang reads.
+                setTimeout(done, 1500);
+            } catch (_) { done(); }
+        });
     }
 
     if ('serviceWorker' in navigator) {
@@ -247,8 +271,8 @@
             pullSwLogs();
             return buffer.join('\n');
         },
-        get_all: function() {
-            pullSwLogs();
+        get_all: async function() {
+            await pullSwLogs();
             return readAllLines();
         },
         count: function() { return buffer.length; },

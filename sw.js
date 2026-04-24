@@ -1,6 +1,7 @@
 // Change this two rows! No other change in this file is a need.
 var MESSAGE_PREFIX = 'GUN_CONNECT';
 var __BASE_PREFIX = '/gun-connect/';
+var APP_NAME = 'gun-connect';
 // The build.sh replaces it with a real APP_VERSION string...
 var APP_VERSION = 'version';
 // Cache version — it is only changes, if a need.
@@ -12,21 +13,22 @@ function _ts() {
         + '-' + String(d.getMonth() + 1).padStart(2, '0')
         + '-' + String(d.getDate()).padStart(2, '0')
         + ' ' + String(d.getHours()).padStart(2, '0')
-        + '-' + String(d.getMinutes()).padStart(2, '0')
-        + '-' + String(d.getSeconds()).padStart(2, '0')
-        + '-' + String(d.getMilliseconds()).padStart(3, '0');
+        + ':' + String(d.getMinutes()).padStart(2, '0')
+        + ':' + String(d.getSeconds()).padStart(2, '0')
+        + '.' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
+// Grep-friendly line format: YYYY-MM-DD HH:MM:SS.MMM APP:<app> LL:SW <text>
 const LOG = (...args) => {
     const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    const entry = _ts() + ' ' + CACHE_NAME + ' [SW] ' + text;
+    const entry = _ts() + ' APP:' + APP_NAME + ' LL:SW ' + text;
     console.log(`[SW ${CACHE_NAME}]`, ...args);
     _swLogPush(entry);
 };
 
 const ERR = (...args) => {
     const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    const entry = _ts() + ' ' + CACHE_NAME + ' [SW ERR] ' + text;
+    const entry = _ts() + ' APP:' + APP_NAME + ' LL:SWE ' + text;
     console.error(`[SW ${CACHE_NAME}]`, ...args);
     _swLogPush(entry);
 };
@@ -39,6 +41,7 @@ LOG('Cache name:', CACHE_NAME);
 // Mirrors the client-side buffer in log_bridge.js so that SW lifecycle and
 // fetch events are captured even when no client tab is listening.
 
+// Ring size — see log_bridge.template.js for client-side MEMORY_MAX / MAX_DB_ENTRIES.
 var __SW_LOG_MAX = 1000;
 var __swLogBuffer = [];
 

@@ -2,6 +2,38 @@
 
 ---
 
+## LOG rendszer — peer-review pontok (2026-04)
+
+Kanonikus forrás: `../store/log_bridge.template.js` + `../store/sw.template.js`,
+alkalmazás-specifikus render: `./sync-bridges.sh`.
+
+Sor-formátum (grep-barát):
+`YYYY-MM-DD HH:MM:SS.MMM APP:<app> LL:<level> <szöveg>` — `<level>` ∈ {LOG, ERR, SW, SWE}.
+
+### Kész
+
+- [x] **7** — `get_all()` verseny: `pullSwLogs()` promise-alapú, awaitelt olvasás, 1500 ms timeout.
+- [x] **9** — Időbélyeg `YYYY-MM-DD HH:MM:SS.MMM` (ISO-közeli).
+- [x] **10** — Három ring-méret (MEMORY_MAX / MAX_DB_ENTRIES / __SW_LOG_MAX) kommentált + kereszthivatkozott.
+- [x] **Formátum** — `APP:` és `LL:` előtagok.
+
+### To remember
+
+- [ ] **3** — `pushSwLine` dedup már TS-levágott kulcsot használ és a legfrissebbet tartja meg; okosabb LRU-t később.
+- [ ] **6** — `readAllLines` sort stabilitásra épít; ha kell, secondary key-ként az `id`-t vesszük.
+
+### After test — we have time for it
+
+- [ ] **1** — `trimDbIfNeeded` fire-and-forget a `persistLine`-ban: `catch` / burst-védelem.
+- [ ] **2** — SW ring nem perzisztens (iOS): SW-ből közvetlenül IDB, vagy IDB-bootolás.
+- [ ] **4** — `MESSAGE_PREFIX` vs `SW_LOG_EVENT` drift: 5 s-os silent-SW warning.
+- [ ] **5** — `version()` cold-start detektálás a DB-ből is.
+
+JSON payload + szűrő UI törölve — marad a plain-text grep-barát formátum.
+
+
+---
+
 ## Development Methodology
 
 We follow **manual test-driven development** within an agile workflow:
