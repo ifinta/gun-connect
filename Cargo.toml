@@ -9,7 +9,7 @@ web = ["dioxus/web", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys", "dep:gloo-
 
 [dependencies]
 # === UI Framework ===
-dioxus = "0.7.3"
+dioxus = "=0.7.5"
 
 # === Library crates ===
 zsozso-common = { git = "ssh://git@github.com/ifinta/zsozso-common.git" }

@@ -165,9 +165,10 @@ cargo install dioxus-cli --force
 
 To install `cargo-binstall` itself (one-time):
 ```bash
-cargo install cargo-binstall
+cargo install cargo-binstall --locked
 ```
-
+or install a precompiled binary: https://github.com/cargo-bins/cargo-binstall/issues/1634
+((because the desktop:pici (bookworm) we use dioxus@0.7.5 . needs better clib :D I don't want to use sid, only for nvidia :D gpu ...))
 ---
 
 ## simple steps:
