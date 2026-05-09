@@ -43,6 +43,34 @@
  border:none; border-radius:6px; background:#fff; color:#17a2b8; font-weight:bold;
  cursor:pointer;">Refresh</button>
     </div>
+
+    <!-- Hints modal: shown after Refresh. Add new hints to #hints-content (newest first). -->
+    <div id="hints-modal" style="display:none; position:fixed; inset:0; z-index:99999;
+ background:rgba(0,0,0,0.5); font-family:sans-serif;">
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+ background:#fff; border-radius:12px; padding:28px 32px; max-width:420px; width:90%;
+ box-shadow:0 8px 32px rgba(0,0,0,0.25); color:#333; line-height:1.6;">
+            <h3 style="margin:0 0 14px; color:#17a2b8;">What's new</h3>
+            <div id="hints-content" style="max-height:60vh; overflow-y:auto;">
+                Hello.
+                <br/><br/>
+                <!-- Add new hints at the TOP. Each <div class="hint"> needs a UTC data-version (YYYY-MM-DDTHH:MMZ). -->
+                <div class="hint" data-version="2026-05-09T00:00Z">
+                    <b style="color:#888; font-size:0.85em;">2026-05-09 00:00 UTC</b><br>
+                    From today here will be you informed about the last important changes.
+                </div>
+                <br/>
+                Have a nice day!<br/>
+                ifinta from Europe
+            </div>
+            <div style="text-align:right; margin-top:18px;">
+                <button id="hints-refresh-btn" style="padding:10px 28px; font-size:1rem;
+ font-weight:bold; border:none; border-radius:6px; background:#17a2b8; color:#fff;
+ cursor:pointer;">OK</button>
+            </div>
+        </div>
+    </div>
+
     <div id="main"></div>
     <script>
         let APP_NAME = 'GUN_CONNECT'; // for the update message...
@@ -97,28 +125,11 @@
                 else console.log('[App] no sw-update-banner');
             }
 
-            // Wire up the Refresh button
+            // Wire up the Refresh button — set hints flag and reload
             document.getElementById('sw-refresh-btn').addEventListener('click', function() {
-                // Hard reload: bypass cache to pick up the new SW-served assets
-                console.log('[App] hard reload...');
+                console.log('[App] setting hints flag and reloading...');
+                localStorage.setItem(PREFIX + '_show_hints', '1');
                 window.location.reload();
-//                // Unregister all service workers and clear their caches,
-//                // then hard-reload so the browser fetches fresh assets.
-//                console.log('[App] Refresh: unregistering SW and clearing caches…');
-//                Promise.all([
-//                    navigator.serviceWorker.getRegistrations().then(function(regs) {
-//                        return Promise.all(regs.map(function(r) { return r.unregister(); }));
-//                    }),
-//                    caches.keys().then(function(keys) {
-//                        return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-//                    })
-//                ]).then(function() {
-//                    console.log('[App] SW unregistered, caches cleared — reloading');
-//                    window.location.reload();
-//                }).catch(function(e) {
-//                    console.error('[App] cleanup failed, reloading anyway:', e);
-//                    window.location.reload();
-//                });
             });
 
             // Listen for update signal from the Service Worker
@@ -150,6 +161,31 @@
 
             // Start the loop
             tick();
+
+            // After reload: if Refresh was clicked, show the hints modal
+            if (localStorage.getItem(PREFIX + '_show_hints') === '1') {
+                localStorage.removeItem(PREFIX + '_show_hints');
+                var lastSeen = localStorage.getItem(PREFIX + '_hints_seen') || '1970-01-01T00:00';
+                var hints = document.querySelectorAll('#hints-content .hint');
+                var hasNew = false;
+                var newest = lastSeen;
+                hints.forEach(function(el) {
+                    var v = el.getAttribute('data-version') || '';
+                    if (v > lastSeen) {
+                        hasNew = true;
+                        if (v > newest) newest = v;
+                    } else {
+                        el.style.display = 'none';
+                    }
+                });
+                if (hasNew) {
+                    document.getElementById('hints-modal').style.display = 'block';
+                    document.getElementById('hints-refresh-btn').addEventListener('click', function() {
+                        localStorage.setItem(PREFIX + '_hints_seen', newest);
+                        document.getElementById('hints-modal').style.display = 'none';
+                    });
+                }
+            }
         } else {
             document.body.innerHTML = '<p>Service Workers are not supported in this browser.</p>';
         }
