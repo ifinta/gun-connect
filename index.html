@@ -59,6 +59,25 @@
                     <b style="color:#888; font-size:0.85em;">2026-05-09 00:00 UTC</b><br>
                     From today here will be you informed about the last important changes.
                 </div>
+                <div class="hint" data-version="2026-05-26T09:10Z">
+                    <b style="color:#888; font-size:0.85em;">2026-05-26 09:10 UTC</b><br>
+                    <b style="color:#dc3545; font-size:0.9em;"> ⚠ CRITICAL ARCHITECTURE UPDATE</b><br>
+                    The sPWA interface upgrading to a single-stage, fully offline-proof architecture.
+                    If you experience any unusual behavior or a "Load Failed" error, a legacy background service worker is likely cached.<br>
+                    <b style="color:#333;">Action Required:</b> Please perform a <b>Hard Reload</b> to force-refresh the system:
+                    <ul style="margin:6px 0; padding-left:20px; font-size:0.95em;">
+                        <li>Swipe the app away from your background running tasks, clear your browser's local storage/cache, then reopen it. Many THANKs your patience, support, hints, time, ...</li>
+                    </ul>
+                </div>
+                <!--
+                <div class="hint" data-version="2026-05-26T09:10Z">
+                    <b style="color:#888; font-size:0.85em;">2026-05-26 09:10 UTC</b><br>
+                    The sPWA interface has been upgraded to a single-stage, fully offline-proof architecture.
+                    <ul style="margin:6px 0; padding-left:20px; font-size:0.95em;">
+                        <li>If You see this message, the service worker migration was successful.</li>
+                    </ul>
+                </div>
+                -->
                 <br/>
                 Have a nice day!<br/>
                 ifinta from Europe
@@ -73,102 +92,95 @@
 
     <div id="main"></div>
     <script>
-        let APP_NAME = 'GUN_CONNECT'; // for the update message...
+        let APP_NAME = 'GUN_CONNECT';
         let PREFIX = "gun-connect";
-        if ( document.getElementById('spinner') && 'serviceWorker' in navigator) {
-            // bootloader logic: ensure SW is registered and controlling the page, then reload if needed
-            if ('serviceWorker' in navigator) {
-                function hardReload() {
-                     if (navigator.serviceWorker.controller) doReload();
-                
-                     // Wait for work to finish, then schedule the next one
-                     setTimeout(tick, 100);
-                }
 
-                if (window.location.pathname.slice(-1) !== '/') {
-                     window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
-                } else if (navigator.serviceWorker.controller) {
-                    window.location.reload();
-                } else {
-                    var reloading = false;
-                    function doReload() {
-                        if (reloading) return;
-                        reloading = true;
-                        window.location.reload();
-                    }
-                    navigator.serviceWorker.addEventListener('controllerchange', doReload);
-                    navigator.serviceWorker.register(`/${PREFIX}/sw.js`, { scope: `/${PREFIX}/`, updateViaCache: 'none' });
-                    hardReload();
-                }
-            }
-        } else if ('serviceWorker' in navigator) {
-            // main index.html logic: check updates and show update banner if needed
+        if ('serviceWorker' in navigator) {
+
+            // 1. Háttérben futó frissítés-ellenőrző ciklus (10 másodpercenként)
             function tick() {
-                console.log("[App] tick");
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.ready.then(reg => reg.update());
-                }
-                
-                // Wait for work to finish, then schedule the next one
+                console.log("[App] checking for updates...");
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.update();
+                });
                 setTimeout(tick, 10000);
             }
 
+            // 2. Banner megjelenítése (elmentve a várakozó workert a gombra)
             var _swRefreshing = false;
-            console.log('[App] serviceWorker in navigator');
-
-            // Show the update banner with a manual Refresh button
-            function _showRefreshBanner() {
+            function _showRefreshBanner(waitingWorker) {
                 if (_swRefreshing) return;
-                _swRefreshing = true;
                 var banner = document.getElementById('sw-update-banner');
-                if (banner) banner.style.display = 'block';
-                else console.log('[App] no sw-update-banner');
+                if (banner) {
+                    banner.style.display = 'block';
+                    document.getElementById('sw-refresh-btn').waitingWorker = waitingWorker;
+                }
             }
 
-            // Wire up the Refresh button — set hints flag and reload
+            // 3. A HTML-ben lévő Refresh gomb eseménykezelője
             document.getElementById('sw-refresh-btn').addEventListener('click', function() {
-                console.log('[App] setting hints flag and reloading...');
+                console.log('[App] setting hints flag and triggering SW takeover...');
+                localStorage.setItem(PREFIX + '_show_hints', '1');
+
+                // Megkérjük a várakozó új SW-t, hogy lépjen életbe (SKIP_WAITING)
+                var worker = this.waitingWorker;
+                if (worker) {
+                    worker.postMessage({ action: 'SKIP_WAITING' });
+                } else {
+                    window.location.reload();
+                }
+            });
+
+            // 4. Amikor az új SW átveszi az irányítást -> Tiszta újratöltés
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+                if (_swRefreshing) return;
+                _swRefreshing = true;
+                console.log('[App] new Service Worker active — reloading page now ✓');
                 localStorage.setItem(PREFIX + '_show_hints', '1');
                 window.location.reload();
             });
 
-            // Listen for update signal from the Service Worker
-            navigator.serviceWorker.addEventListener('message', function(event) {
-                if (event.data?.type === `__${APP_NAME}_SW_UPDATED`) {
-                    console.log('[App] update signal — showing Refresh banner');
-                    _showRefreshBanner();
-                }
-            });
-
-            //  When a new Service Worker takes control, show the Refresh banner
-            //  instead of auto-reloading (which can white-screen on PWA).
-            navigator.serviceWorker.addEventListener('controllerchange', function() {
-                console.log('[App] new Service Worker took control — showing Refresh banner');
-                _showRefreshBanner();
-            });
-
-            // Register (not re-register) the SW.
-            // updateViaCache:'none' ensures the browser always fetches sw.js
-            // from the network, bypassing any HTTP cache or file lock.
+            // 5. Service Worker regisztráció (Közvetlenül a saját prefix-szel, bootloader nélkül)
             navigator.serviceWorker.register(`/${PREFIX}/sw.js`, {
                 scope: `/${PREFIX}/`,
                 updateViaCache: 'none'
             }).then(function(reg) {
                 console.log('[App] Service Worker registered, scope:', reg.scope);
+
+                // A: Ha már eleve ott vár a háttérben az új verzió (pl. egy korábbi lapnyitásból)
+                if (reg.waiting) {
+                    _showRefreshBanner(reg.waiting);
+                }
+
+                // B: Ha futás közben érkezik meg és települ le az új verzió
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            // Csak akkor mutatjuk, ha teljesen letöltődött (installed) ÉS ez egy frissítés
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('[App] New update installed and waiting');
+                                _showRefreshBanner(newWorker);
+                            }
+                        });
+                    }
+                });
             }).catch(function(err) {
                 console.log('[App] Service Worker registration failed:', err.message || err);
             });
 
-            // Start the loop
+            // Ciklus indítása
             tick();
 
-            // After reload: if Refresh was clicked, show the hints modal
+            // 6. ÚJRATÖLTÉS UTÁN: A meglévő Hints Modal és verziók ellenőrzése
             if (localStorage.getItem(PREFIX + '_show_hints') === '1') {
                 localStorage.removeItem(PREFIX + '_show_hints');
+
                 var lastSeen = localStorage.getItem(PREFIX + '_hints_seen') || '1970-01-01T00:00';
                 var hints = document.querySelectorAll('#hints-content .hint');
                 var hasNew = false;
                 var newest = lastSeen;
+
                 hints.forEach(function(el) {
                     var v = el.getAttribute('data-version') || '';
                     if (v > lastSeen) {
@@ -178,6 +190,8 @@
                         el.style.display = 'none';
                     }
                 });
+
+                // Csak akkor nyitjuk meg a beágyazott modalt, ha van valóban új hír
                 if (hasNew) {
                     document.getElementById('hints-modal').style.display = 'block';
                     document.getElementById('hints-refresh-btn').addEventListener('click', function() {

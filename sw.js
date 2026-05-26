@@ -5,7 +5,7 @@ var APP_NAME = 'gun-connect';
 // The build.sh replaces it with a real APP_VERSION string...
 var APP_VERSION = 'version';
 // Cache version — it is only changes, if a need.
-const CACHE_NAME = APP_VERSION+'-SW-v0.12';
+const CACHE_NAME = APP_VERSION+'-SW-v0.20';
 
 function _ts() {
     const d = new Date();
@@ -19,11 +19,6 @@ function _ts() {
 }
 
 // ── SW-side log ring buffer ──────────────────────────────────────────────────
-// Declared BEFORE LOG/ERR so the top-level LOG('Script evaluated') calls below
-// have a valid buffer to push into. With `var` hoisting, __swLogBuffer would be
-// `undefined` at top-level LOG time, which threw TypeError during SW script
-// evaluation and aborted the worker.
-// Ring size — see log_bridge.template.js for client-side MEMORY_MAX / MAX_DB_ENTRIES.
 var __SW_LOG_MAX = 1000;
 var __swLogBuffer = [];
 
@@ -61,15 +56,20 @@ LOG('Cache name:', CACHE_NAME);
 const LOG2 = function(...args) { LOG(...args); };
 const ERR2 = function(...args) { ERR(...args); };
 
-// Handle messages from clients (GET_LOGS, CLEAR_LOGS)
+// Handle messages from clients (GET_LOGS, CLEAR_LOGS, SKIP_WAITING)
 self.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'GET_LOGS') {
+    if (!event.data) return;
+
+    if (event.data.type === 'GET_LOGS') {
         var port = event.ports && event.ports[0];
         if (port) {
             port.postMessage({ logs: __swLogBuffer.slice() });
         }
-    } else if (event.data && event.data.type === 'CLEAR_LOGS') {
+    } else if (event.data.type === 'CLEAR_LOGS') {
         __swLogBuffer.length = 0;
+    } else if (event.data.action === 'SKIP_WAITING') {
+        LOG('SW: Received SKIP_WAITING signal from client. Taking over control...');
+        self.skipWaiting();
     }
 });
 
@@ -89,7 +89,7 @@ function _extractJson(html) {
     if (end === -1) end = html.indexOf('</script>', start);
     LOG('_extractJson: parsing JSON from position', start, 'to', end, '(' + (end - start) + ' chars)');
     var result = JSON.parse(html.substring(start, end));
-    LOG('_extractJson: parsed OK, keys:', Object.keys(result));
+    LOG('_extractJson: parsed OK, keys:', Object.keys(result.assets).length, 'embedded assets found');
     return result;
 }
 
@@ -101,51 +101,28 @@ function _b64ToArrayBuffer(b64) {
     return bytes.buffer;
 }
 
-async function _decompressToText(b64) {
-    LOG('_decompressToText: decompressing', b64.length, 'base64 chars');
-    var gzBuf = _b64ToArrayBuffer(b64);
-    LOG('_decompressToText: gzip buffer size:', gzBuf.byteLength, 'bytes');
-    var ds = new DecompressionStream('gzip');
-    var writer = ds.writable.getWriter();
-    writer.write(new Uint8Array(gzBuf));
-    writer.close();
-    var text = await new Response(ds.readable).text();
-    LOG('_decompressToText: decompressed to', text.length, 'chars');
-    return text;
-}
-
 async function _loadAssets() {
     if (__ASSETS) {
-        LOG('_loadAssets: already loaded, skipping');
         return;
     }
-    LOG('_loadAssets: starting two-level load from index.html …');
+    LOG('_loadAssets: cache/memory miss, loading configuration from local Cache Storage…');
 
-    // Level 1: fetch bootloader index.html → extract single embedded file (app index.html)
     var fetchUrl = __BASE_PREFIX + 'index.html';
-    LOG('_loadAssets: fetching', fetchUrl);
+    
     try {
-        var resp = await fetch(fetchUrl, { cache: 'no-cache' });
-        LOG('_loadAssets: fetch response status:', resp.status, resp.statusText);
-        if (!resp.ok) {
-            ERR('_loadAssets: fetch failed with status', resp.status);
-            throw new Error('Failed to load index.html: ' + resp.status);
+        var cache = await caches.open(CACHE_NAME);
+        var cachedResp = await cache.match(fetchUrl);
+        
+        if (!cachedResp) {
+            ERR('_loadAssets: CRITICAL — index.html is missing from Cache Storage!');
+            throw new Error('Application index.html missing from cache storage.');
         }
-        var bootHtml = await resp.text();
-        LOG('_loadAssets: bootloader HTML size:', bootHtml.length, 'chars');
-        var level1 = _extractJson(bootHtml);
-        var level1Keys = Object.keys(level1.assets);
-        LOG('Level 1: extracted', level1Keys.length, 'file(s) from bootloader:', level1Keys);
 
-        // Level 2: decompress app index.html → extract all individual assets
-        LOG('_loadAssets: decompressing app index.html …');
-        var appHtml = await _decompressToText(level1.assets['index.html']);
-        LOG('_loadAssets: app index.html size:', appHtml.length, 'chars');
+        var appHtml = await cachedResp.text();
+        LOG('_loadAssets: application HTML loaded from cache, size:', appHtml.length, 'chars');
+        
         __ASSETS = _extractJson(appHtml);
-        var assetKeys = Object.keys(__ASSETS.assets);
-        LOG('Level 2: extracted', assetKeys.length, 'assets from app index.html');
-        LOG('_loadAssets: asset keys:', assetKeys);
-        LOG('_loadAssets: complete ✓');
+        LOG('_loadAssets: asset extraction complete. Cache is warm and active. ✓');
     } catch (e) {
         ERR('_loadAssets: FAILED —', e.message);
         throw e;
@@ -164,6 +141,7 @@ function _serveEmbedded(key) {
     }
     var mime = __ASSETS.mime[key] || 'application/octet-stream';
     LOG('_serveEmbedded: serving', key, '(' + mime + ',', data.length, 'base64 chars)');
+    
     // Decompress: base64 → gzip bytes → DecompressionStream → raw bytes
     var gzBuf = _b64ToArrayBuffer(data);
     var ds = new DecompressionStream('gzip');
@@ -176,8 +154,18 @@ function _serveEmbedded(key) {
     });
 }
 
-function _serve404(pathname) {
-    ERR('_serve404: returning 404 for', pathname);
+function _escapeHTML(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#x27;');
+}
+
+function _serve404(message) {
+    ERR('_serve404: returning 404 because: ', message);
+    var safeMessage = _escapeHTML(message);
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
         + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
         + '<title>404 — Not Found</title>'
@@ -188,7 +176,7 @@ function _serve404(pathname) {
         + '</style></head><body><div>'
         + '<h1>404</h1>'
         + '<p>The requested resource was not found.</p>'
-        + '<p style="font-size:0.85em;font-family:monospace;word-break:break-all">' + pathname + '</p>'
+        + '<p style="font-size:0.85em;font-family:monospace;word-break:break-all">' + safeMessage + '</p>'
         + '<p style="margin-top:24px"><a href="./">← Back to app</a></p>'
         + '</div></body></html>';
     return new Response(html, {
@@ -200,14 +188,19 @@ function _serve404(pathname) {
 // ── Lifecycle events ─────────────────────────────────────────────────────────
 
 self.addEventListener('install', event => {
-    LOG('Install event — calling skipWaiting()');
-    self.skipWaiting();
-    LOG('Install: skipWaiting called, now loading assets …');
+    LOG('Install event — triggered for version:', APP_VERSION);
+    var fetchUrl = __BASE_PREFIX + 'index.html';
+
     event.waitUntil(
-        _loadAssets().then(function() {
-            LOG('Install: assets loaded successfully ✓');
+        caches.open(CACHE_NAME).then(function(cache) {
+            LOG('Install: pre-caching application index.html from network:', fetchUrl);
+            return cache.add(fetchUrl);
+        }).then(function() {
+            LOG('Install: asset pre-caching successful, activating new Service Worker ✓');
+            self.skipWaiting();
         }).catch(function(e) {
-            ERR('Install: asset loading FAILED —', e.message);
+            ERR('Install: pre-caching CRITICAL FAILURE —', e.message);
+            throw e;
         })
     );
 });
@@ -233,8 +226,6 @@ self.addEventListener('activate', event => {
             return self.clients.claim().then(() => isUpdate);
         }).then(isUpdate => {
             // Only notify clients to reload when we actually replaced an older version.
-            // On iOS the SW can be terminated and re-activated by the OS —
-            // that is NOT an update and must not trigger a reload loop.
             if (isUpdate) {
                 return self.clients.matchAll({ type: 'window' }).then(clients => {
                     LOG('Activate: sending update notification to', clients.length, 'client(s)');
@@ -255,56 +246,51 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', function(event) {
     var url = new URL(event.request.url);
-    LOG('Fetch:', event.request.mode, url.pathname);
-
-    // Navigation requests → serve index.html (SPA / client-side routing)
-    if (event.request.mode === 'navigate') {
-        LOG('Fetch: navigation request for', url.pathname, '→ serving index.html');
-        event.respondWith(
-            _loadAssets().then(function() {
-                var resp = _serveEmbedded('index.html');
-                if (resp) {
-                    LOG('Fetch: navigation → index.html served ✓');
-                    return resp;
-                }
-                ERR('Fetch: navigation → index.html NOT FOUND, returning 404');
-                return _serve404(url.pathname);
-            }).catch(function(e) {
-                ERR('Fetch: navigation FAILED —', e.message);
-                return _serve404(url.pathname);
-            })
-        );
-        return;
-    }
 
     // Cross-origin — fall through to normal network fetch
     if (url.origin !== self.location.origin) {
-        LOG('Fetch: cross-origin, passing through:', url.href);
         return;
     }
 
+    // Navigation requests → serve the cached index.html directly (SPA / client-side routing)
+    if (event.request.mode === 'navigate') {
+        LOG('Fetch: navigation request for', url.pathname, '→ serving index.html from cache');
+        event.respondWith(
+            caches.open(CACHE_NAME).then(function(cache) {
+                return cache.match(__BASE_PREFIX + 'index.html');
+            }).then(function(resp) {
+                if (resp) {
+                    LOG('Fetch: navigation → index.html served directly from Cache Storage ✓');
+                    return resp;
+                }
+                // Maybe it is the first run...
+                return _loadAssets().then(function() {
+                    return _serve404(url.pathname + ' (Cache miss on navigate)');
+                });
+            }).catch(function(e) {
+                return _serve404(url.pathname + ' Fetch: navigation FAILED — ' + e.message);
+            })
+        );
+        return;
+    }    
+
     // Strip the base prefix to get the embedded-asset key.
-    // Example: base="/sPWA/", pathname="/sPWA/assets/foo.js" → "assets/foo.js"
     var relative = url.pathname;
     if (__BASE_PREFIX !== '/' && relative.startsWith(__BASE_PREFIX)) {
         relative = relative.substring(__BASE_PREFIX.length);
     } else if (relative.startsWith('/')) {
         relative = relative.substring(1);
     }
-    LOG('Fetch: resolved asset key:', relative, '(from', url.pathname + ')');
 
     event.respondWith(
         _loadAssets().then(function() {
             var resp = _serveEmbedded(relative);
             if (resp) {
-                LOG('Fetch: served embedded asset:', relative, '✓');
                 return resp;
             }
-            ERR('Fetch: asset not found:', relative, '→ 404');
-            return _serve404(url.pathname);
+            return _serve404(url.pathname + ' Fetch: asset not found: ' + relative + ' → 404');
         }).catch(function(e) {
-            ERR('Fetch: error serving', relative, '—', e.message);
-            return _serve404(url.pathname);
+            return _serve404(url.pathname + ' Fetch: error serving ' + relative + ' — ' + e.message);
         })
     );
 });

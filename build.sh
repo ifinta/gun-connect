@@ -28,7 +28,7 @@ BUILD_TS="$(date +%Y%m%d-%H%M)"
 GIT_HASH="$(git rev-parse --short=8 HEAD)"
 
 APP_NAME="gun-connect"
-# Deployment prefix: /gun-connect/ for live server, /gun-connect-dioxus/ for GitHub Pages
+# Deployment prefix: /gun-connect/ for both live server and GitHub Pages.
 if $GHPAGES; then
   PREFIX="gun-connect"
   APP_VERSION="${APP_NAME}-gh-${BUILD_TS}-${GIT_HASH}"
@@ -78,15 +78,19 @@ echo "Stamped ${DIST_DIR}/sw.js"
 sed -i "s|window.__APP_VERSION = '.*'|window.__APP_VERSION = '${APP_VERSION}'|" "${DIST_DIR}/index.html"
 echo "Stamped ${DIST_DIR}/index.html"
 
+# Ensure the generated assets use the current deployment prefix and app labels for both build modes.
+sed -i "s|.*var MESSAGE_PREFIX =.*|var MESSAGE_PREFIX = 'GUN_CONNECT';|" "${DIST_DIR}/sw.js"
+sed -i "s|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '/${PREFIX}/';|" "${DIST_DIR}/sw.js"
+sed -i "s|.*var APP_NAME =.*|var APP_NAME = 'gun-connect';|" "${DIST_DIR}/sw.js"
+sed -i "s|.*let APP_NAME =.*|        let APP_NAME = \"GUN_CONNECT\";|g" "${DIST_DIR}/index.html"
+sed -i "s|.*let PREFIX =.*|        let PREFIX = \"${PREFIX}\";|g" "${DIST_DIR}/index.html"
+
 # ── 5. Bundle for deployment ─────────────────────────────────────────────────
-# For GitHub Pages builds, patch manifest.json paths and index.html to match the /gun-connect-dioxus/ prefix
 if $GHPAGES; then
-  sed -i 's|.*var __BASE_PREFIX =.*|var __BASE_PREFIX = '"'"'/gun-connect/'"'"';|g' "${DIST_DIR}/sw.js"
-  sed -i 's|.*let PREFIX =.*|        let PREFIX = "gun-connect";|g' "${DIST_DIR}/index.html"
   sed -i 's|.*"id":.*|    "id": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
   sed -i 's|.*"start_url":.*|    "start_url": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
   sed -i 's|.*"scope":.*|    "scope": "/gun-connect/",|g' "${DIST_DIR}/manifest.json"
-  echo "Patched manifest.json and index.html for -ghpages (GitHub Pages) deployment (/gun-connect/)"
+  echo "Patched manifest.json for -ghpages (GitHub Pages) deployment (/gun-connect/)"
 fi
 
 echo "Running: node bundle.js ${DIST_DIR} deploy ${PREFIX}"
